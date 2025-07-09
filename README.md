@@ -1,6 +1,6 @@
-# LMSGuardian
+# LMSGuardianG2
 
-LMSGuardian is a link and content scanner built for Moodle-based LMS environments. It identifies external links, paywalls, file downloads, and content redirections to help assess information security risks across course content.
+LMSGuardian v2 is a comprehensive link and content scanner built for Moodle-based LMS environments. It identifies external links, paywalls, file downloads, and content redirections to help assess information security risks across course content.
 
 ## 🚀 Quick Start
 
@@ -32,7 +32,7 @@ LMSGuardian is a link and content scanner built for Moodle-based LMS environment
 ## 📁 Folder Structure
 
 ```
-LMSGuardian/
+LMSGuardianG2/
 ├── scraper/               # main scraper subsystem
 │   └── main.py            # start scanning here
 │   └── paywall/           # paywall and redirect detection logic
