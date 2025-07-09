@@ -44,19 +44,19 @@ DROP SEQUENCE IF EXISTS reports_report_id_seq CASCADE;
 -- UnitCoordinator Table (matches app/models/unitCoordinator.py)
 CREATE TABLE unit_coordinators (
     uc_id SERIAL PRIMARY KEY,
-    full_name VARCHAR(255) NOT NULL,
-    email VARCHAR(255) NOT NULL UNIQUE
+    full_name TEXT NOT NULL,
+    email TEXT NOT NULL UNIQUE
 );
 
 -- Module Table (matches app/models/module.py)
 CREATE TABLE modules (
     module_id SERIAL PRIMARY KEY,
     uc_id INTEGER NOT NULL,
-    module_name VARCHAR(255) NOT NULL,
-    teaching_period VARCHAR(255) NOT NULL,
-    semester VARCHAR(255) NOT NULL,
-    module_description VARCHAR(255) NOT NULL,
-    unit_code VARCHAR(255) NOT NULL,
+    module_name TEXT NOT NULL,
+    teaching_period TEXT NOT NULL,
+    semester TEXT NOT NULL,
+    module_description TEXT NOT NULL,
+    unit_code TEXT NOT NULL,
     CONSTRAINT fk_modules_uc_id FOREIGN KEY (uc_id) REFERENCES unit_coordinators (uc_id) ON DELETE CASCADE
 );
 
@@ -65,7 +65,7 @@ CREATE TABLE scraper_sessions (
     session_id SERIAL PRIMARY KEY,
     started_at TIMESTAMP,
     ended_at TIMESTAMP,
-    completion_status VARCHAR(255),
+    completion_status TEXT,
     error_log TEXT
 );
 
@@ -76,7 +76,7 @@ CREATE TABLE scraped_contents (
     session_id INTEGER NOT NULL,
     scraped_at TIMESTAMP,
     url_link TEXT,
-    risk_category VARCHAR(255),
+    risk_category TEXT,
     risk_score FLOAT,
     content_location TEXT,
     is_paywall BOOLEAN DEFAULT FALSE,

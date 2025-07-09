@@ -84,11 +84,22 @@ BEGIN
 END
 $$;
 
+-- Update unit_coordinators table column types
+SELECT modify_column_type_if_needed('unit_coordinators', 'full_name', 'TEXT');
+SELECT modify_column_type_if_needed('unit_coordinators', 'email', 'TEXT');
+
 -- Update modules table to match model exactly
-SELECT modify_column_type_if_needed('modules', 'teaching_period', 'VARCHAR(255)');
-SELECT modify_column_type_if_needed('modules', 'semester', 'VARCHAR(255)');
-SELECT modify_column_type_if_needed('modules', 'module_description', 'VARCHAR(255)');
-SELECT modify_column_type_if_needed('modules', 'unit_code', 'VARCHAR(255)');
+SELECT modify_column_type_if_needed('modules', 'module_name', 'TEXT');
+SELECT modify_column_type_if_needed('modules', 'teaching_period', 'TEXT');
+SELECT modify_column_type_if_needed('modules', 'semester', 'TEXT');
+SELECT modify_column_type_if_needed('modules', 'module_description', 'TEXT');
+SELECT modify_column_type_if_needed('modules', 'unit_code', 'TEXT');
+
+-- Update scraper_sessions table column types
+SELECT modify_column_type_if_needed('scraper_sessions', 'completion_status', 'TEXT');
+
+-- Update scraped_contents table column types
+SELECT modify_column_type_if_needed('scraped_contents', 'risk_category', 'TEXT');
 
 -- Remove extra columns from modules if they exist
 DO $$
