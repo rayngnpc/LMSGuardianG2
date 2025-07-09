@@ -25,41 +25,41 @@ BEGIN;
 -- ============================================================================
 
 -- Function to safely add columns if they don't exist
-CREATE OR REPLACE FUNCTION add_column_if_not_exists(table_name text, column_name text, column_definition text)
+CREATE OR REPLACE FUNCTION add_column_if_not_exists(table_name_param text, column_name_param text, column_definition text)
 RETURNS void AS $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM information_schema.columns 
-        WHERE table_name = table_name AND column_name = column_name
+        WHERE table_name = table_name_param AND column_name = column_name_param
     ) THEN
-        EXECUTE format('ALTER TABLE %I ADD COLUMN %I %s', table_name, column_name, column_definition);
-        RAISE NOTICE 'Added column % to table %', column_name, table_name;
+        EXECUTE format('ALTER TABLE %I ADD COLUMN %I %s', table_name_param, column_name_param, column_definition);
+        RAISE NOTICE 'Added column % to table %', column_name_param, table_name_param;
     ELSE
-        RAISE NOTICE 'Column % already exists in table %', column_name, table_name;
+        RAISE NOTICE 'Column % already exists in table %', column_name_param, table_name_param;
     END IF;
 END;
 $$ LANGUAGE plpgsql;
 
 -- Function to safely modify column types
-CREATE OR REPLACE FUNCTION modify_column_type_if_needed(table_name text, column_name text, new_type text)
+CREATE OR REPLACE FUNCTION modify_column_type_if_needed(table_name_param text, column_name_param text, new_type text)
 RETURNS void AS $$
 DECLARE
     current_type text;
 BEGIN
     SELECT data_type INTO current_type
     FROM information_schema.columns 
-    WHERE table_name = table_name AND column_name = column_name;
+    WHERE table_name = table_name_param AND column_name = column_name_param;
     
     IF current_type IS NULL THEN
-        RAISE NOTICE 'Column % does not exist in table %', column_name, table_name;
+        RAISE NOTICE 'Column % does not exist in table %', column_name_param, table_name_param;
         RETURN;
     END IF;
     
     IF current_type != new_type THEN
-        EXECUTE format('ALTER TABLE %I ALTER COLUMN %I TYPE %s', table_name, column_name, new_type);
-        RAISE NOTICE 'Changed column % in table % from % to %', column_name, table_name, current_type, new_type;
+        EXECUTE format('ALTER TABLE %I ALTER COLUMN %I TYPE %s', table_name_param, column_name_param, new_type);
+        RAISE NOTICE 'Changed column % in table % from % to %', column_name_param, table_name_param, current_type, new_type;
     ELSE
-        RAISE NOTICE 'Column % in table % already has correct type %', column_name, table_name, new_type;
+        RAISE NOTICE 'Column % in table % already has correct type %', column_name_param, table_name_param, new_type;
     END IF;
 END;
 $$ LANGUAGE plpgsql;
