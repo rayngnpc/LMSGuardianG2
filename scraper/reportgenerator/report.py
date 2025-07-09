@@ -131,12 +131,12 @@ def generate_and_send_module_reports():
     module_coordinator_map = {
         1: {
             'coordinator_name': 'BSC203 Coordinator',
-            'coordinator_email': 'npchau95@gmail.com',  # BSC203 coordinator email
+            'coordinator_email': 'bsc203.coordinator@university.edu.au',  # BSC203 coordinator email
             'base_url': 'http://10.51.33.25/moodle/course/view.php?id=2'
         },
         2: {
             'coordinator_name': 'ICT280 Coordinator', 
-            'coordinator_email': 'npchau95@gmail.com',  # ICT280 coordinator email
+            'coordinator_email': 'ict280.coordinator@university.edu.au',  # ICT280 coordinator email
             'base_url': 'http://10.51.33.25/moodle/course/view.php?id=3'
         }
         # Add more modules as needed:
@@ -695,10 +695,10 @@ if __name__ == "__main__":
     # test_module = "ICT302"
     # base_url = "http://10.51.33.25/moodle/course/view.php?id=2"
     # report_path = generatePDF(test_uc, test_module, all_links, base_url)
-    # send_email_with_report("npchau95@gmail.com", report_path, test_module, test_uc)
+    # send_email_with_report("coordinator@university.edu.au", report_path, test_module, test_uc)
 
     # MAIN TEST (unchanged, for reference)
-    # test_email = "npchau95@gmail.com"
+    # test_email = "coordinator@university.edu.au"
     # test_module = "ICT302"
     # test_uc = "Peter Cole"
     # base_url = "http://10.51.33.25/moodle/course/view.php?id=2"

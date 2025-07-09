@@ -1,6 +1,14 @@
 # LMS Guardian v2 - Complete System Summary
 
-## 📋 **Answers to Your Questions:**
+## � **Security Notice**
+
+**Before deploying this system:**
+1. Copy `.env.example` to `.env` and configure with your actual credentials
+2. Never commit the `.env` file with real credentials to version control
+3. Update email addresses in code to match your organization
+4. Change default database passwords from examples
+
+## �📋 **Answers to Your Questions:**
 
 ### 1. **Auto-Course Discovery When Scraping**
 - **Current:** No, scraper only processes existing database modules

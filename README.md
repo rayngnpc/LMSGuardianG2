@@ -4,18 +4,17 @@ LMSGuardian v2 is a comprehensive link and content scanner built for Moodle-base
 
 ## 🚀 Quick Start
 
-1. **Create a `.env` file** in the root of the project.
+1. **Configure Environment Variables**:
 
-   Use this template:
-
-   ```env
-   MOODLE_USERNAME=
-   MOODLE_PASSWORD=
-   DATABASE_URL=
-   GOOGLE_SAFE_KEY=
-   EMAIL_USER=
-   EMAIL_PASS=
+   ```bash
+   # Copy the example environment file
+   cp .env.example .env
+   
+   # Edit with your actual credentials
+   nano .env
    ```
+
+   **🔒 Security Notice**: Never commit real credentials to version control! The `.env` file is excluded from git.
 
 2. **Install the dependencies**:
 

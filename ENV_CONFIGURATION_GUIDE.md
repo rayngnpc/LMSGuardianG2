@@ -4,12 +4,39 @@
 
 The LMS Guardian system is fully configurable through the `.env` file. You can easily change behavior without modifying any code by simply editing the environment variables.
 
+## 🔒 Security First
+
+**Important**: Always copy `.env.example` to `.env` and update with your actual credentials:
+
+```bash
+cp .env.example .env
+nano .env  # Edit with your real credentials
+```
+
+**Never commit real credentials to version control!**
+
 ## Configuration Options
 
 ### 🔐 Authentication Settings
 ```env
-MOODLE_USERNAME=admin
-MOODLE_PASSWORD="#Group2ict302"
+MOODLE_USERNAME=your_moodle_username
+MOODLE_PASSWORD=your_moodle_password
+```
+
+### 📧 Email Configuration
+```env
+EMAIL_USER=your_email@example.com
+EMAIL_PASS=your_email_app_password
+```
+
+### 🗃️ Database Configuration
+```env
+DATABASE_URL=postgresql://username:password@localhost:5432/lmsguardian
+```
+
+### 🔑 API Keys
+```env
+GOOGLE_SAFE_KEY=your_google_safe_browsing_api_key
 ```
 
 ### 📊 Scraping Configuration
