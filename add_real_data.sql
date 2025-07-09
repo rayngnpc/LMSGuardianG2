@@ -1,9 +1,9 @@
 -- ============================================================================
--- LMS Guardian v2 - Add Real Data Script
--- TEMPLATE FOR YOUR ACTUAL COURSE DATA
+-- LMS Guardian v2 - Add Real Data Script  
+-- ACTUAL COURSE DATA FOR PRODUCTION
 -- ============================================================================
 -- 
--- Replace the example data below with your real course information
+-- This contains the real course data for production use
 -- Run this AFTER running cleanup_example_data.sql
 --
 -- ============================================================================
@@ -16,8 +16,7 @@ BEGIN;
 
 -- Replace with your actual unit coordinators
 INSERT INTO unit_coordinators (full_name, email) VALUES
-    ('Dr. Your Real Name', 'your.real.email@university.edu'),
-    ('Prof. Another Coordinator', 'another.coordinator@university.edu');
+    ('Peter Col', 'npchau95@gmail.com');
 
 -- ============================================================================
 -- ADD YOUR REAL MODULES/COURSES
@@ -26,8 +25,8 @@ INSERT INTO unit_coordinators (full_name, email) VALUES
 -- Replace with your actual course modules
 -- Format: (uc_id, module_name, teaching_period, semester, module_description, unit_code)
 INSERT INTO modules (uc_id, module_name, teaching_period, semester, module_description, unit_code) VALUES
-    (1, 'Your Real Course Name 1', 'Current Teaching Period', 'Current Semester', 'Real course description here', 'REAL001'),
-    (2, 'Your Real Course Name 2', 'Current Teaching Period', 'Current Semester', 'Another real course description', 'REAL002');
+    (1, 'BSC203 Introduction to ICT Research Methods', 'Semester 1', '2025', 'Introduction to research methods and practices in ICT.', 'BSC203'),
+    (1, 'ICT280 Information Security Policy and Governance', 'Semester 1', '2025', 'Information security policy development and governance frameworks.', 'ICT280');
 
 -- ============================================================================
 -- VERIFICATION

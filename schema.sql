@@ -108,17 +108,15 @@ CREATE INDEX idx_scraped_contents_risk_category ON scraped_contents(risk_categor
 CREATE INDEX idx_scraped_contents_url_hash ON scraped_contents USING hash(url_link);
 
 -- ============================================================================
--- EXAMPLE DATA (SAFE FOR PRODUCTION)
+-- REAL DATA FOR PRODUCTION USE
 -- ============================================================================
 
--- Insert example Unit Coordinators (replace with your actual coordinators)
+-- Insert actual Unit Coordinators
 INSERT INTO unit_coordinators (full_name, email) VALUES
-    ('Dr. Jane Smith', 'jane.smith@university.edu.au'),
-    ('Prof. John Doe', 'john.doe@university.edu.au'),
-    ('Dr. Alice Johnson', 'alice.johnson@university.edu.au')
+    ('Peter Col', 'npchau95@gmail.com')
 ON CONFLICT (email) DO NOTHING;
 
--- Insert example Modules (replace with your actual modules)
+-- Insert actual Modules
 INSERT INTO modules (
     uc_id,
     module_name,
@@ -127,9 +125,8 @@ INSERT INTO modules (
     module_description,
     unit_code
 ) VALUES
-    (1, 'BSC203 Introduction to ICT Research Methods', 'TMA', '2025', 'This unit introduces students to ICT research methods and practices.', 'BSC203'),
-    (2, 'ICT280 Information Security Policy and Governance', 'TMA', '2025', 'This unit covers information security policies and governance frameworks.', 'ICT280'),
-    (3, 'ICT302 Advanced Database Systems', 'TMA', '2025', 'Advanced concepts in database design and management.', 'ICT302')
+    (1, 'BSC203 Introduction to ICT Research Methods', 'Semester 1', '2025', 'Introduction to research methods and practices in ICT.', 'BSC203'),
+    (1, 'ICT280 Information Security Policy and Governance', 'Semester 1', '2025', 'Information security policy development and governance frameworks.', 'ICT280')
 ON CONFLICT DO NOTHING;
 
 -- ============================================================================
