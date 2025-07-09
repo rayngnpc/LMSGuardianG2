@@ -77,7 +77,7 @@ SAVE_SCREENSHOTS=true                # true = save login screenshots, false = no
 ### 📧 Email Configuration
 ```env
 EMAIL_USER=noreplytestict302@gmail.com
-EMAIL_PASS=rhdw kmua pmmo wfbn
+EMAIL_PASS= >Password<
 ```
 
 ### 🔗 API Configuration
