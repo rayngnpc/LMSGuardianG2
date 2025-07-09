@@ -82,8 +82,8 @@ EMAIL_PASS=rhdw kmua pmmo wfbn
 
 ### 🔗 API Configuration
 ```env
-DATABASE_URL=postgresql://admin:123@localhost:5432/lmsguardian
-GOOGLE_SAFE_KEY=AIzaSyCusomUXr7JCvCEZCyEK6eC3ZVk9d0NUM0
+DATABASE_URL=postgresql://your_db_user:your_db_password@localhost:5432/your_db
+GOOGLE_SAFE_KEY=<Your API Key>
 ```
 
 ## Common Configuration Scenarios
