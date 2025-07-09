@@ -79,6 +79,6 @@ def getAll(db: Session):
 
 
 def getById(db: Session, coordinatorId: int):
-    sql = text("SELECT uc_id, full_name,email  FROM unit_coordinators WHERE id = :id")
+    sql = text("SELECT uc_id, full_name, email FROM unit_coordinators WHERE uc_id = :id")
     result = db.execute(sql, {"id": coordinatorId}).fetchone()
     return dict(result) if result else None
