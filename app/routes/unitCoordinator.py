@@ -4,7 +4,7 @@ from app.database.database import getDb
 from app.crud import unitCoordinator as crud
 from app.schemas import unitCoordinator as schema
 
-router = APIRouter(prefix="/unitCoordinator", tags=["Unit Coordinators"])
+router = APIRouter(prefix="/unitcoordinator", tags=["Unit Coordinators"])
 
 
 @router.get("/", response_model=list[schema.UnitCoordinator])

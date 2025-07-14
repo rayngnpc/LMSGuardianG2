@@ -15,12 +15,14 @@ load_dotenv(override=True)
 USERNAME = os.getenv("MOODLE_USERNAME")
 PASSWORD = os.getenv("MOODLE_PASSWORD")
 
+
 # Configuration from Environment Variables
 def str_to_bool(value: str) -> bool:
     """Convert string to boolean"""
-    return value.lower() in ('true', '1', 'yes', 'on')
+    return value.lower() in ("true", "1", "yes", "on")
 
-HEADLESS_BROWSER = str_to_bool(os.getenv("HEADLESS_BROWSER", "true"))
+
+HEADLESS_BROWSER = str_to_bool(os.getenv("HEADLESS_BROWSER", "false"))
 BROWSER_TIMEOUT = int(os.getenv("BROWSER_TIMEOUT", "60000"))
 CRAWLER_DELAY_SECONDS = float(os.getenv("CRAWLER_DELAY_SECONDS", "0.5"))
 SAVE_SCREENSHOTS = str_to_bool(os.getenv("SAVE_SCREENSHOTS", "true"))
@@ -50,10 +52,57 @@ EXCLUDED_PATH_PREFIXES = [
     "/moodle/user",
 ]
 
+import requests
+
+
+def is_publicly_accessible(url: str) -> tuple[bool, bool]:
+    """
+    Returns (is_reachable, is_login_required)
+    """
+    try:
+        response = requests.get(url, allow_redirects=False, timeout=5)
+        status = response.status_code
+        location = response.headers.get("location", "").lower()
+
+        # Common login indicators in redirect URL
+        login_keywords = ["login", "signin", "auth", "session", "noauth", "login.aspx"]
+
+        if status in (301, 302) and any(k in location for k in login_keywords):
+            return (True, True)  # Reachable, but leads to login
+
+        return (True, False)  # Reachable and no obvious login
+
+    except requests.exceptions.RequestException:
+        return (False, False)  # Not reachable at all
+
+
+from urllib.parse import urlparse
+
+
 def is_external_link(url: str) -> bool:
-    from urllib.parse import urlparse
-    parsed = urlparse(url)
-    return parsed.hostname != MOODLE_DOMAIN
+    """
+    Returns True if the URL is considered external (i.e., not Murdoch-controlled).
+    Excludes mailto: links and known internal domains.
+    """
+    if not url or url.strip() == "" or url.startswith("mailto:"):
+        return False  # Not a scrapable or external link
+
+    murdoch_domains = [
+        "murdoch.edu.au",
+        "murdochuniversity.sharepoint.com",
+        "myanswers.custhelp.com",
+        "goto.murdoch.edu.au",
+        "libguides.murdoch.edu.au",
+        "10.51.33.25",  # local Moodle IP
+    ]
+
+    try:
+        parsed = urlparse(url)
+        domain = parsed.hostname or ""
+        return not any(domain.endswith(d) for d in murdoch_domains)
+    except Exception as e:
+        print(f"[WARNING] Failed to parse URL: {url} - {e}")
+        return True  # Treat unknowns as external for safety
 
 
 def post_scraped_link(
@@ -64,6 +113,7 @@ def post_scraped_link(
     is_paywall: bool = False,
     content_location: str = None,
     apa7: str = None,
+    localurl: str = None,
 ):
     sg = pytz.timezone("Asia/Singapore")
     formattedSGtime = datetime.now(sg)
@@ -77,6 +127,7 @@ def post_scraped_link(
         "is_paywall": is_paywall,
         "content_location": content_location,
         "apa7": apa7,
+        "localurl": localurl,
     }
     try:
         response = requests.post("http://127.0.0.1:8000/scrapedcontents/", json=payload)
@@ -93,7 +144,7 @@ async def handle_login_flow(page: Page):
         print("PASSWORD:", PASSWORD)
 
     if "login" in page.url:
-        print("🔐 Login page detected.")
+        print("Login page detected.")
 
         # Ensure full page load before interacting
         await page.wait_for_load_state("networkidle")
@@ -188,6 +239,12 @@ async def get_content_type_with_playwright(context, url: str) -> str:
     return content_type_result
 
 
+import os
+import hashlib
+from urllib.parse import urlparse, unquote
+from playwright.async_api import Page
+
+
 async def storeTempRepoWithPlaywright(page: Page, url: str, ftype: str) -> str | None:
     if is_possibly_malicious(url, ftype):
         print(f"⚠️ Skipped potentially dangerous file: {url} ({ftype})")
@@ -200,15 +257,24 @@ async def storeTempRepoWithPlaywright(page: Page, url: str, ftype: str) -> str |
                 print(f"❌ Response error: {response.status} for {url}")
                 return None
 
-            file_extension = getFileExtension(ftype)
+            # --- Extract filename from URL ---
+            parsed_url = urlparse(url)
+            raw_name = os.path.basename(parsed_url.path)
+            raw_name = unquote(raw_name)  # Decode URL-encoded characters
+
+            # Fallback if filename is empty or doesn't have an extension
+            if not raw_name or "." not in raw_name:
+                extension = getFileExtension(ftype)
+                raw_name = f"downloaded_file{extension}"
+
+            # Remove any potential directory traversal characters
+            filename = os.path.basename(raw_name)
+
             target_dir = os.path.join("scraper", "scraper", "toProcessFurther")
             os.makedirs(target_dir, exist_ok=True)
-
-            # 🔐 Use SHA256 hash of URL for unique filename
-            hashed = hashlib.sha256(url.encode("utf-8")).hexdigest()[:10]
-            filename = f"{hashed}{file_extension}"
             save_path = os.path.join(target_dir, filename)
 
+            # Save the file content
             content = await response.body()
             with open(save_path, "wb") as f:
                 f.write(content)
@@ -321,6 +387,28 @@ async def resolve_final_resource_url(page: Page, url: str) -> str | None:
     return None
 
 
+EXCLUDED_FULL_URL_KEYWORDS = [
+    "login",  # generic
+    "signin",  # often used in Google/Outlook
+    "auth",  # e.g., /auth/session
+    "microsoftonline",  # specific
+    "accounts.google.com",
+    "teams.microsoft.com/light-meetings",
+    "teams.microsoft.com/meeting",
+]
+
+
+from urllib.parse import unquote
+
+
+def is_blocked_url(url: str) -> bool:
+    decoded_url = unquote(url.lower())
+    if "teams.microsoft.com" in decoded_url:
+        print(f"[BLOCKED LINKS] Skipped teams link: {url}")
+        return True
+    return any(keyword in decoded_url for keyword in EXCLUDED_FULL_URL_KEYWORDS)
+
+
 async def extract_links(page: Page, base_url: str, session_id: int, module_id: int):
     await page.wait_for_selector("#page-content")
     anchors = await page.query_selector_all("#page-content a")
@@ -334,19 +422,36 @@ async def extract_links(page: Page, base_url: str, session_id: int, module_id: i
             if await anchor.get_attribute("data-region") == "post-action":
                 continue
             href = await anchor.get_attribute("href")
-            if href and not href.startswith("#"):
-                class_attr = await anchor.get_attribute("class") or ""
-                if "btn" in class_attr:
-                    continue  # Skip navigation buttons
-                full_url = urljoin(base_url, href)
-                collected_links.append(full_url)
+            original_url = await anchor.get_attribute("data-original-url")
+
+            if not href or href.startswith("#"):
+                continue
+
+            # Ignore local mirrors completely
+            if href.startswith("/localrepo/"):
+                continue
+
+            # Use original URL if available, else fall back to href
+            scan_url = urljoin(base_url, original_url if original_url else href)
+
+            class_attr = await anchor.get_attribute("class") or ""
+            if "btn" in class_attr:
+                continue  # Skip navigation buttons
+
+            collected_links.append(scan_url)
+
         except:
             continue
 
     for full_url in collected_links:
         # Check if it's an external link first (this applies to all link types)
+        # check if initial url already has login in its name
+        if is_blocked_url(full_url):
+            print(f"[BLOCKED LINKS] Blocked due to pattern match: {full_url}")
+            continue
         if is_external_link(full_url):
             print("EXTERNAL URL DETECTED")
+
             external_links.append(full_url)
             post_scraped_link(session_id, module_id, full_url)
             continue
@@ -354,13 +459,19 @@ async def extract_links(page: Page, base_url: str, session_id: int, module_id: i
         if "mod/resource/view.php" in full_url:
             try:
                 resolved_url = await resolve_final_resource_url(page, full_url)
+                if is_blocked_url(resolved_url):
+                    print(f"🚫 Skipping resolved blocked URL: {resolved_url}")
+                    continue
+
                 print(f"📎 Found file: {resolved_url} — from {full_url}")
                 if not resolved_url:
                     continue
 
                 # Check if resolved URL is external
                 if is_external_link(resolved_url):
-                    print("EXTERNAL FILE URL DETECTED")
+                    print(
+                        "EXTERNAL FILE URL DETECTED AFTER RESOLVING INTERNAL MIDDLEWARE"
+                    )
                     external_links.append(resolved_url)
                     post_scraped_link(session_id, module_id, resolved_url)
                     continue
@@ -412,32 +523,49 @@ async def extract_links(page: Page, base_url: str, session_id: int, module_id: i
 async def crawl_page(page: Page, url: str, session_id: int, module_id: int):
     print(f"🌐 Visiting: {url}")
     try:
-        # await page.goto(url, timeout=10000)
         await page.goto(url, wait_until="load")
-
     except:
         print(f"⚠️ Failed to load: {url}")
         return []
 
     if "login" in page.url or "Continue" in await page.content():
         await handle_login_flow(page)
-    await page.goto(url, wait_until="load")
+        await page.goto(url, wait_until="load")  # reload after login
+
     meta_tags = await page.query_selector_all("meta[content]")
     for tag in meta_tags:
         content_val = await tag.get_attribute("content")
         print(f"✅ Meta content value: {content_val}")
+
     title = await page.title()
     print(f"📄 Page title: {title}")
-    course_id = await page.evaluate("() => window.M && M.cfg && M.cfg.courseId")
+
+    # ⛏ Try to extract Moodle's internal course ID
+    course_id = await page.evaluate(
+        """() => {
+            if (window.M && M.cfg && M.cfg.courseId) {
+                return M.cfg.courseId;
+            }
+            return null;
+        }"""
+    )
+
+    if course_id is None or course_id != module_id + 1:
+        print(f"🚫 No M.cfg.courseId found — treating as external link.")
+        return []
+
     print(f"🎯 Course ID (from M.cfg): {course_id}")
 
     await expand_internal_toggles(page)
     return await extract_links(page, url, session_id, module_id)
 
+
 async def run_crawler(starting_page: str, session_id: int, module_id: int):
     if DEBUG_MODE:
-        print(f"🔧 Browser Config: Headless={HEADLESS_BROWSER}, Timeout={BROWSER_TIMEOUT}ms, Delay={CRAWLER_DELAY_SECONDS}s")
-    
+        print(
+            f"🔧 Browser Config: Headless={HEADLESS_BROWSER}, Timeout={BROWSER_TIMEOUT}ms, Delay={CRAWLER_DELAY_SECONDS}s"
+        )
+
     async with async_playwright() as playwright:
         browser = await playwright.chromium.launch(headless=HEADLESS_BROWSER)
         context = await browser.new_context()
@@ -475,12 +603,45 @@ async def run_crawler(starting_page: str, session_id: int, module_id: int):
         downloaded_links = downloadFilesAndCheck()
         unique_links = list(set(downloaded_links))
 
+        # Post only valid, external links after crawling them
         for link in unique_links:
-            post_scraped_link(session_id, module_id, link)
+            if is_external_link(link):
+                print(f"[FROM DOCUMENT] External link detected → posting: {link}")
+                post_scraped_link(session_id, module_id, link)
+            else:
+                print(f"[SKIP] Internal or Murdoch-owned link → ignored: {link}")
 
         await browser.close()
 
-        print("\n[INFO] Crawling complete.")
-        print(f"[INFO] Pages visited: {len(pages_visited)}")
-        for url in pages_visited:
-            print(f" - {url}")
+        print("\n✅ Crawling complete.")
+        print(f"📦 Summary for module_id: {module_id}\n")
+
+        # Print visited internal links
+        print("🔗 Internal links that were expanded:")
+        if pages_visited:
+            for url in pages_visited:
+                print(f"   - {url}")
+        else:
+            print("   (none)")
+
+        # Fetch and print external links
+        try:
+            response = requests.get("http://127.0.0.1:8000/scrapedcontents/scan")
+            response.raise_for_status()
+            data = response.json()
+
+            external_links = [
+                item.get("url_link")
+                for item in data
+                if item.get("module_id") == module_id
+            ]
+
+            print("\n🌐 External links that were found:")
+            if external_links:
+                for url in external_links:
+                    print(f"   - {url}")
+            else:
+                print("   (none)")
+
+        except requests.exceptions.RequestException as e:
+            print(f"\n❌ Failed to fetch external link data: {e}")

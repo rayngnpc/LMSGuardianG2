@@ -23,6 +23,7 @@ class ScrapedContentBase(BaseModel):
     content_location: Optional[str] = None
     is_paywall: Optional[bool] = False
     apa7: Optional[str] = None
+    localurl: Optional[str] = None
 
 
 class ScrapedContentCreate(ScrapedContentBase):

@@ -177,53 +177,6 @@ def clear_directory():
             print(f"[ERROR] Could not delete {item_path}. Reason: {e}")
 
 
-# ---------- URL Filter ----------
-def is_scrapable_moodle_link(url: str) -> bool:
-    parsed = urlparse(url)
-
-    if not url or url.startswith("mailto:") or url.strip() == "https://":
-        return False
-
-    domain = parsed.netloc.lower()
-
-    if (
-        "/moodle/course/view.php" in parsed.path
-        or "/moodle/mod/resource/view.php" in parsed.path
-    ):
-        return True
-
-    if any(
-        good in domain
-        for good in [
-            "files.wordpress.com",
-            "sfia-online.org",
-            "navexone.com",
-            "dlsweb.rmit.edu.au",
-            "mindtools.com",
-        ]
-    ):
-        return True
-
-    if any(
-        exclude in domain
-        for exclude in [
-            "goto.murdoch.edu.au",
-            "student.unsw.edu.au",
-            "copilot.microsoft.com",
-            "murdochuniversity.sharepoint.com",
-            "libguides.murdoch.edu.au",
-        ]
-    ):
-        return False
-
-    if any(
-        url.lower().endswith(ext)
-        for ext in [".pdf", ".doc", ".docx", ".pptx", ".xls", ".xlsx"]
-    ):
-        return True
-
-    return False
-
 
 # ---------- Main ----------
 def downloadFilesAndCheck():
@@ -252,14 +205,14 @@ def downloadFilesAndCheck():
             print(f"   [LINK] {link}")
             all_links.append(link)
 
-    scrapable_links = list(filter(is_scrapable_moodle_link, all_links))
+    
 
-    print("\n[INFO] Scrapable Moodle Links:")
-    for link in scrapable_links:
+    print("\n[INFO] Total Links Found:")
+    for link in all_links:
         print(f"   [SCRAPE] {link}")
 
     clear_directory()
-    return scrapable_links
+    return all_links
 
 
 # ---------- Run ----------
