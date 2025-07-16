@@ -3,7 +3,7 @@ import re
 import asyncio
 import requests
 from datetime import datetime
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse, unquote
 from dotenv import load_dotenv
 from playwright.async_api import async_playwright, Page
 from .utils import *
@@ -81,25 +81,49 @@ from urllib.parse import urlparse
 
 def is_external_link(url: str) -> bool:
     """
-    Returns True if the URL is considered external (i.e., not Murdoch-controlled).
-    Excludes mailto: links and known internal domains.
+    Returns True if the URL is considered external (i.e., not our local Moodle or trusted Murdoch domains).
+    Treats local Moodle IP and all murdoch.edu.au domains as internal/trusted.
     """
     if not url or url.strip() == "" or url.startswith("mailto:"):
         return False  # Not a scrapable or external link
 
-    murdoch_domains = [
+    # Internal/trusted domains (won't be scanned for security threats)
+    internal_domains = [
+        "10.51.33.25",  # local Moodle IP
+    ]
+    
+    # All Murdoch domains are considered trusted (internal)
+    trusted_murdoch_domains = [
         "murdoch.edu.au",
+        "moodleprod.murdoch.edu.au", 
         "murdochuniversity.sharepoint.com",
-        "myanswers.custhelp.com",
         "goto.murdoch.edu.au",
         "libguides.murdoch.edu.au",
-        "10.51.33.25",  # local Moodle IP
+        "library.murdoch.edu.au",
+        "our.murdoch.edu.au",
+        "online.murdoch.edu.au",
+        "myanswers.custhelp.com",  # Murdoch support system
     ]
 
     try:
         parsed = urlparse(url)
         domain = parsed.hostname or ""
-        return not any(domain.endswith(d) for d in murdoch_domains)
+        
+        # Check if it's our local internal domain
+        if any(domain == d or domain.endswith(f".{d}") for d in internal_domains):
+            return False  # Internal
+            
+        # Check if it's a trusted Murdoch domain
+        if any(domain == d or domain.endswith(f".{d}") for d in trusted_murdoch_domains):
+            return False  # Trusted, treat as internal
+            
+        # Check for any murdoch.edu.au subdomains
+        if domain.endswith(".murdoch.edu.au") or domain == "murdoch.edu.au":
+            return False  # All Murdoch domains are trusted
+            
+        # Everything else is external
+        return True
+        
     except Exception as e:
         print(f"[WARNING] Failed to parse URL: {url} - {e}")
         return True  # Treat unknowns as external for safety
@@ -245,18 +269,13 @@ from urllib.parse import urlparse, unquote
 from playwright.async_api import Page
 
 
-async def storeTempRepoWithPlaywright(page: Page, url: str, ftype: str) -> str | None:
+async def storeTempRepoWithPlaywright(page: Page, url: str, ftype: str, downloaded_files: set) -> str | None:
     if is_possibly_malicious(url, ftype):
         print(f"⚠️ Skipped potentially dangerous file: {url} ({ftype})")
         return None
 
     if not ftype.startswith("text/html"):
         try:
-            response = await page.request.get(url)
-            if response.status != 200:
-                print(f"❌ Response error: {response.status} for {url}")
-                return None
-
             # --- Extract filename from URL ---
             parsed_url = urlparse(url)
             raw_name = os.path.basename(parsed_url.path)
@@ -269,6 +288,20 @@ async def storeTempRepoWithPlaywright(page: Page, url: str, ftype: str) -> str |
 
             # Remove any potential directory traversal characters
             filename = os.path.basename(raw_name)
+            
+            # Check if this file has already been downloaded
+            file_key = f"{filename}_{ftype}"
+            if file_key in downloaded_files:
+                print(f"⏭️ SKIP: {filename} already downloaded")
+                return None
+            
+            # Add to downloaded files set
+            downloaded_files.add(file_key)
+
+            response = await page.request.get(url)
+            if response.status != 200:
+                print(f"❌ Response error: {response.status} for {url}")
+                return None
 
             target_dir = os.path.join("scraper", "scraper", "toProcessFurther")
             os.makedirs(target_dir, exist_ok=True)
@@ -409,7 +442,7 @@ def is_blocked_url(url: str) -> bool:
     return any(keyword in decoded_url for keyword in EXCLUDED_FULL_URL_KEYWORDS)
 
 
-async def extract_links(page: Page, base_url: str, session_id: int, module_id: int):
+async def extract_links(page: Page, base_url: str, session_id: int, module_id: int, downloaded_files: set):
     await page.wait_for_selector("#page-content")
     anchors = await page.query_selector_all("#page-content a")
 
@@ -490,7 +523,7 @@ async def extract_links(page: Page, base_url: str, session_id: int, module_id: i
                     links_to_crawl_further.append(resolved_url)
                 else:
                     if not is_possibly_malicious(resolved_url, mime_type):
-                        await storeTempRepoWithPlaywright(page, resolved_url, mime_type)
+                        await storeTempRepoWithPlaywright(page, resolved_url, mime_type, downloaded_files)
                         print("📥 Internal file saved for processing")
 
                 continue
@@ -506,12 +539,16 @@ async def extract_links(page: Page, base_url: str, session_id: int, module_id: i
         mime_type = await get_content_type_with_playwright(page.context, full_url)
 
         if not is_possibly_malicious(full_url, mime_type):
-            await storeTempRepoWithPlaywright(page, full_url, mime_type)
+            await storeTempRepoWithPlaywright(page, full_url, mime_type, downloaded_files)
 
         print(f"INTERNAL URL: {mime_type} — {full_url}")
 
         if mime_type.startswith("text/html"):
-            links_to_crawl_further.append(full_url)
+            # Skip problematic external Murdoch domains that we can't access
+            if "moodleprod.murdoch.edu.au" in full_url and "10.51.33.25" not in full_url:
+                print(f"🚫 Skipping external Murdoch domain (access issues): {full_url}")
+            else:
+                links_to_crawl_further.append(full_url)
         else:
             print("📥 Internal file saved for processing")
 
@@ -520,7 +557,7 @@ async def extract_links(page: Page, base_url: str, session_id: int, module_id: i
     return links_to_crawl_further
 
 
-async def crawl_page(page: Page, url: str, session_id: int, module_id: int):
+async def crawl_page(page: Page, url: str, session_id: int, module_id: int, downloaded_files: set):
     print(f"🌐 Visiting: {url}")
     try:
         await page.goto(url, wait_until="load")
@@ -557,7 +594,7 @@ async def crawl_page(page: Page, url: str, session_id: int, module_id: int):
     print(f"🎯 Course ID (from M.cfg): {course_id}")
 
     await expand_internal_toggles(page)
-    return await extract_links(page, url, session_id, module_id)
+    return await extract_links(page, url, session_id, module_id, downloaded_files)
 
 
 async def run_crawler(starting_page: str, session_id: int, module_id: int):
@@ -575,6 +612,8 @@ async def run_crawler(starting_page: str, session_id: int, module_id: int):
         pages_to_check = [starting_page]
         pages_already_seen = set()
         pages_visited = []
+        # Add file deduplication tracking
+        downloaded_files = set()
 
         while pages_to_check:
             current_page = pages_to_check.pop(0)
@@ -586,7 +625,7 @@ async def run_crawler(starting_page: str, session_id: int, module_id: int):
             pages_already_seen.add(clean_page_url)
             print(f"[CHECK] {current_page}")
 
-            found_links = await crawl_page(page, current_page, session_id, module_id)
+            found_links = await crawl_page(page, current_page, session_id, module_id, downloaded_files)
             pages_visited.append(current_page)
 
             for link in found_links:

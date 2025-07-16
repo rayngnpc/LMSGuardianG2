@@ -131,12 +131,12 @@ def generate_and_send_module_reports():
     module_coordinator_map = {
         1: {
             'coordinator_name': 'BSC203 Coordinator',
-            'coordinator_email': 'bsc203.coordinator@university.edu.au',  # BSC203 coordinator email
+            'coordinator_email': 'noreplytestict302@gmail.com',  # Your email for testing
             'base_url': 'http://10.51.33.25/moodle/course/view.php?id=2'
         },
         2: {
             'coordinator_name': 'ICT280 Coordinator', 
-            'coordinator_email': 'ict280.coordinator@university.edu.au',  # ICT280 coordinator email
+            'coordinator_email': 'noreplytestict302@gmail.com',  # Your email for testing
             'base_url': 'http://10.51.33.25/moodle/course/view.php?id=3'
         }
         # Add more modules as needed:

@@ -1,0 +1,69 @@
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Virtual environment
+venv/
+env/
+ENV/
+.venv/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Test files
+test_*.py
+*_test.py
+test/
+tests/
+
+# Markdown files
+*.md
+
+# Local repository content (keep folder structure but ignore content)
+localrepo/*/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+*.out
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Temporary files
+*.tmp
+*.temp
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+
+# Report files
+*.docx
+*.pdf
+*.png
+*.jpg
+*.jpeg
+
+# SQL files (optional - remove if you need them)
+*.sql
+
+# Processing folders
+toProcessFurther/

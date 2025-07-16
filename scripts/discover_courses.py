@@ -59,9 +59,9 @@ async def discover_courses():
             await page.goto("http://10.51.33.25/moodle/login/index.php")
             
             # Fill login form
-            await page.fill('input[name="username"]', os.getenv('LMS_USERNAME'))
-            await page.fill('input[name="password"]', os.getenv('LMS_PASSWORD'))
-            await page.click('input[type="submit"]')
+            await page.fill('input[name="username"]', os.getenv('MOODLE_USERNAME'))
+            await page.fill('input[name="password"]', os.getenv('MOODLE_PASSWORD'))
+            await page.click('button[type="submit"]')
             await page.wait_for_load_state('networkidle')
             
             # Try to find course discovery page or iterate through possible course IDs
