@@ -1,7 +1,7 @@
 import os
 import smtplib
 from datetime import datetime, UTC
-from typing import List
+from typing import List, Tuple
 from docx import Document
 from docx.shared import Inches, Pt
 from docx.enum.section import WD_ORIENT
@@ -13,8 +13,36 @@ import requests
 import re
 from urllib.parse import urlparse
 from bs4 import BeautifulSoup
+import sys
+
+# Add parent directory to path for content filter
+sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+
+try:
+    from content_filter import content_filter
+    CONTENT_FILTER_AVAILABLE = True
+except ImportError:
+    print("⚠️ Content filter not available - continuing without filtering")
+    CONTENT_FILTER_AVAILABLE = False
 
 load_dotenv(override=True)
+
+def should_exclude_from_apa_citation(url: str, title: str = "", is_paywall: bool = False, is_pornography: bool = False) -> Tuple[bool, str]:
+    """Check if content should be excluded from APA citation generation"""
+    if not CONTENT_FILTER_AVAILABLE:
+        return False, ""
+    
+    # Check for pornography first
+    if is_pornography:
+        return True, "Inappropriate content (pornography)"
+    
+    # Check using content filter
+    should_exclude, reason = content_filter.should_exclude_from_apa_citation(url, title, "", is_paywall)
+    if should_exclude:
+        print(f"🚫 Excluding from APA citation: {url[:50]}... - {reason}")
+        return True, reason
+    
+    return False, ""
 
 def format_scraped_at(raw_ts):
     try:
@@ -304,20 +332,20 @@ def generatePDF(ucname: str, moduleCode: str, urls: List[dict], baseUrl: str) ->
             if key in para.text:
                 para.text = para.text.replace(key, value)
 
-    # Table headers
+    # Table headers - Removed "Local Path" column
     headers = [
         "Link URL", "Risk Status", "Paywall", "Downloadable", "File Type", "Detected On",
-        "APA7 Citation", "LMS Context", "Local Path", "Warning"
+        "APA7 Citation", "LMS Context", "Warning"
     ]
     
     # Create the table
     table = doc.add_table(rows=1, cols=len(headers))
     table.style = 'Table Grid'
     
-    # Set column widths - Made APA7 column wider
+    # Set column widths - Removed Local Path column, redistributed space
     column_widths = [
         Inches(2.5), Inches(1.5), Inches(0.8), Inches(1.0), Inches(1.0), Inches(1.3),
-        Inches(3.5), Inches(1.5), Inches(1.0), Inches(1.5)
+        Inches(3.5), Inches(1.5), Inches(1.8)
     ]
     
     # Format header row
@@ -337,65 +365,250 @@ def generatePDF(ucname: str, moduleCode: str, urls: List[dict], baseUrl: str) ->
     # Add data rows
     for link in urls:
             row = table.add_row().cells
-            url = link.get("url_link", "")
+            # ENHANCED: URL normalization and display
+            raw_url = link.get("url_link", "")
+            
+            # Normalize URL formatting
+            if raw_url:
+                # Fix common URL format issues
+                if raw_url.startswith('http:\\\\'):
+                    raw_url = raw_url.replace('http:\\\\', 'http://')
+                elif raw_url.startswith('https:\\\\'):
+                    raw_url = raw_url.replace('https:\\\\', 'https://')
+                elif not raw_url.startswith(('http://', 'https://')):
+                    raw_url = 'https://' + raw_url
+                
+                # Clean up double slashes (except in protocol)
+                if '://' in raw_url:
+                    protocol, rest = raw_url.split('://', 1)
+                    rest = rest.replace('//', '/')
+                    raw_url = protocol + '://' + rest
+            
+            url = raw_url
             row[0].text = url
             
-            # FIXED: Enhanced risk display for external links
+            # ENHANCED: Comprehensive risk display with trusted domain detection
             risk_score = link.get("risk_score")
             risk_category = link.get("risk_category", "")
             
-            # Determine risk display based on score and category
-            if risk_score is not None:
-                # Has a risk score - show score and category
+            # Check for malicious content first (higher priority than other categorizations)
+            is_malicious_content = False
+            if CONTENT_FILTER_AVAILABLE:
+                is_malicious_content, _ = content_filter.is_malicious_url(url, link.get("title", ""), "", risk_category)
+            
+            # Also check if risk_category itself indicates malicious content
+            malicious_indicators = ["malicious", "spyware", "malware", "compromised", "phishing", "trojan", "virus"]
+            if risk_category and any(indicator in risk_category.lower() for indicator in malicious_indicators):
+                is_malicious_content = True
+            
+            # Check if this is a trusted domain (but override if malicious)
+            is_trusted_url = False
+            if not is_malicious_content:
+                try:
+                    # Import trusted domain checker
+                    import sys
+                    sys.path.append('/home/administrator/Test-Chau-LMS/LMSTest/scraper/reputation')
+                    from checker import is_trusted_domain
+                    is_trusted_url = is_trusted_domain(url)
+                except:
+                    pass
+            
+            # Determine risk display based on priority: Malicious > Trusted > Score/Category
+            if is_malicious_content:
+                risk_display = "🚨 MALICIOUS: Security Threat Detected"
+            elif is_trusted_url:
+                risk_display = "✅ Trusted Institution"
+            elif risk_score is not None:
+                # Has a risk score - show enhanced format
                 if risk_category and risk_category.strip():
+                    # Clean up category name
+                    clean_category = risk_category.replace('_', ' ').replace('-', ' ').title()
+                    
                     # Check for high-risk categories
-                    high_risk_keywords = ["porn", "pornography", "adult content", "sexually explicit", "phishing", "malware", "trackers"]
+                    high_risk_keywords = ["porn", "pornography", "adult content", "sexually explicit", "phishing", "malware", "trackers", "nsfw"]
                     is_high_risk = any(keyword in risk_category.lower() for keyword in high_risk_keywords)
                     
                     if is_high_risk:
-                        risk_display = f"⚠️ HIGH RISK: {risk_category} (Score: {risk_score})"
+                        risk_display = f"🚨 HIGH RISK: {clean_category} ({risk_score}%)"
+                    elif risk_score == 0:
+                        risk_display = f"✅ Safe: {clean_category}"
+                    elif risk_score <= 20:
+                        risk_display = f"✅ Low Risk: {clean_category} ({risk_score}%)"
+                    elif risk_score <= 50:
+                        risk_display = f"⚠️ Medium Risk: {clean_category} ({risk_score}%)"
                     else:
-                        risk_display = f"{risk_category} (Score: {risk_score})"
+                        risk_display = f"🚨 High Risk: {clean_category} ({risk_score}%)"
                 else:
-                    risk_display = f"Score: {risk_score}"
+                    # Score only
+                    if risk_score == 0:
+                        risk_display = "✅ Safe"
+                    elif risk_score <= 20:
+                        risk_display = f"✅ Low Risk ({risk_score}%)"
+                    elif risk_score <= 50:
+                        risk_display = f"⚠️ Medium Risk ({risk_score}%)"
+                    else:
+                        risk_display = f"🚨 High Risk ({risk_score}%)"
             else:
                 # No risk score available
                 if risk_category and risk_category.strip():
-                    risk_display = f"External ({risk_category})"
+                    clean_category = risk_category.replace('_', ' ').replace('-', ' ').title()
+                    if risk_category.lower() in ["trusted_domain", "trusted"]:
+                        risk_display = "✅ Trusted Institution"
+                    else:
+                        risk_display = f"External: {clean_category}"
                 else:
                     risk_display = "External (Not analyzed)"
+            
             row[1].text = risk_display
             
             row[2].text = "Yes" if link.get("is_paywall") else "No"
             
-            # Enhanced downloadable detection
+            # ENHANCED: Comprehensive downloadable and file type detection
             downloadable = "No"
             file_type = "Web Page"
-            if any(ext in url.lower() for ext in ['.pdf', '.doc', '.docx', '.ppt', '.pptx', '.xls', '.xlsx', '.zip', '.rar', '.txt']):
-                downloadable = "Yes"
-                # Extract file type from URL
-                for ext in ['.pdf', '.docx', '.pptx', '.xlsx', '.doc', '.ppt', '.xls', '.zip', '.rar', '.txt']:
-                    if ext in url.lower():
-                        file_type = ext.upper().replace('.', '')
-                        break
+            
+            # Comprehensive file type detection
+            file_type_mapping = {
+                # Documents
+                '.pdf': 'PDF Document',
+                '.doc': 'Word Document',
+                '.docx': 'Word Document',
+                '.txt': 'Text File',
+                '.rtf': 'Rich Text Format',
+                '.odt': 'OpenDocument Text',
+                
+                # Spreadsheets
+                '.xls': 'Excel Spreadsheet',
+                '.xlsx': 'Excel Spreadsheet',
+                '.csv': 'CSV File',
+                '.ods': 'OpenDocument Spreadsheet',
+                
+                # Presentations
+                '.ppt': 'PowerPoint Presentation',
+                '.pptx': 'PowerPoint Presentation',
+                '.odp': 'OpenDocument Presentation',
+                
+                # Archives
+                '.zip': 'ZIP Archive',
+                '.rar': 'RAR Archive',
+                '.7z': '7-Zip Archive',
+                '.tar': 'TAR Archive',
+                '.gz': 'GZip Archive',
+                
+                # Media
+                '.jpg': 'JPEG Image',
+                '.jpeg': 'JPEG Image',
+                '.png': 'PNG Image',
+                '.gif': 'GIF Image',
+                '.bmp': 'Bitmap Image',
+                '.svg': 'SVG Image',
+                '.mp4': 'MP4 Video',
+                '.avi': 'AVI Video',
+                '.mov': 'QuickTime Video',
+                '.wmv': 'Windows Media Video',
+                '.mp3': 'MP3 Audio',
+                '.wav': 'WAV Audio',
+                '.flac': 'FLAC Audio',
+                
+                # Code/Development
+                '.py': 'Python Script',
+                '.js': 'JavaScript File',
+                '.html': 'HTML Document',
+                '.css': 'CSS Stylesheet',
+                '.xml': 'XML Document',
+                '.json': 'JSON Data'
+            }
+            
+            # Check for file extensions in URL
+            url_lower = url.lower()
+            detected_extension = None
+            
+            for ext, type_name in file_type_mapping.items():
+                if url_lower.endswith(ext) or f'{ext}?' in url_lower or f'{ext}#' in url_lower:
+                    downloadable = "Yes"
+                    file_type = type_name
+                    detected_extension = ext
+                    break
+            
+            # Additional check for common download patterns
+            if not detected_extension:
+                download_indicators = [
+                    '/download/', '/files/', '/attachments/', '/documents/', 
+                    '/uploads/', '/media/', '/assets/', 'download.php',
+                    'file.php', 'attachment.php'
+                ]
+                if any(indicator in url_lower for indicator in download_indicators):
+                    downloadable = "Possible"
+                    file_type = "Download Link"
             
             row[3].text = downloadable
             row[4].text = file_type
             raw_ts = link.get("scraped_at", "")
             row[5].text = format_scraped_at(raw_ts)
             
-            # Generate APA7 citation if needed
+            # Generate APA7 citation if needed - but exclude pornography, paywall, and malicious content
             existing_apa7 = link.get("apa7", "") or ""
             if not existing_apa7 and needs_apa7_citation(url):
-                print(f"   📚 Generating APA7 citation for: {url[:50]}...")
-                apa7_citation = generate_apa7_citation(url, raw_ts)
-                row[6].text = apa7_citation
+                # Enhanced pornography detection using API categories
+                is_pornography = link.get("is_pornography", False)
+                risk_category = link.get("risk_category", "")
+                
+                if not is_pornography and CONTENT_FILTER_AVAILABLE:
+                    # Check using content filter with API risk category
+                    is_porn, _ = content_filter.is_pornography_url(url, link.get("title", ""), "", risk_category)
+                    is_pornography = is_porn
+                
+                # Check if content should be excluded from APA citation
+                should_exclude_apa, exclude_reason = should_exclude_from_apa_citation(
+                    url, 
+                    link.get("title", ""), 
+                    link.get("is_paywall", False), 
+                    is_pornography
+                )
+                if should_exclude_apa:
+                    row[6].text = f"APA Citation not generated ({exclude_reason})"
+                    print(f"🚫 APA blocked for {url[:50]}... - {exclude_reason}")
+                else:
+                    print(f"   📚 Generating APA7 citation for: {url[:50]}...")
+                    apa7_citation = generate_apa7_citation(url, raw_ts)
+                    row[6].text = apa7_citation
             else:
                 row[6].text = existing_apa7
             
             row[7].text = link.get("lms_context", "") or ""
-            row[8].text = link.get("local_path", "") or ""
-            row[9].text = "Warning: Paywalled/Controlled Access" if link.get("is_paywall") else ""
+            
+            # Updated Warning column logic - removed Local Path (was row[8])
+            warnings = []
+            
+            # Check for paywall
+            if link.get("is_paywall"):
+                warnings.append("Paywalled/Controlled Access")
+            
+            # Check for pornography/inappropriate content using API categories
+            is_pornography = link.get("is_pornography", False)
+            risk_category = link.get("risk_category", "")
+            
+            if is_pornography:
+                warnings.append("Inappropriate Content")
+            elif CONTENT_FILTER_AVAILABLE:
+                # Check using content filter with API risk category
+                is_porn, _ = content_filter.is_pornography_url(url, link.get("title", ""), "", risk_category)
+                if is_porn:
+                    warnings.append("Inappropriate Content")
+            
+            # Check for malicious content
+            risk_category = link.get("risk_category", "")
+            if CONTENT_FILTER_AVAILABLE:
+                is_malicious, _ = content_filter.is_malicious_url(url, link.get("title", ""), "", risk_category)
+                # Only add warning if not already shown in risk display
+                if is_malicious and not is_malicious_content:
+                    warnings.append("Malicious Content")
+            
+            # Set warning text
+            if warnings:
+                row[8].text = "Warning: " + ", ".join(warnings)
+            else:
+                row[8].text = ""
             for idx, cell in enumerate(row):
                 cell.paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.LEFT if idx == 0 else WD_ALIGN_PARAGRAPH.CENTER
                 cell.paragraphs[0].runs[0].font.size = Pt(9)
@@ -621,30 +834,66 @@ def generate_apa7_citation(url: str, scraped_date: str = None) -> str:
         else:
             access_date_str = datetime.now().strftime("%B %d, %Y")
         
+        # Properly format site name for APA7 (capitalize first letter)
+        site_name = domain.replace('.com', '').replace('.au', '').replace('.org', '').replace('.edu', '').replace('.gov', '').title()
+        
+        # Remove resource type from title if it's already mentioned
+        if resource_type in title:
+            title = title.replace(resource_type, '').strip()
+        
+        # Clean up title formatting
+        title = re.sub(r'\s+', ' ', title).strip()
+        if not title.endswith('.'):
+            title += '.'
+        
+        # Determine if we need "Retrieved" statement (only for likely-to-change content)
+        needs_retrieved = any(keyword in url.lower() for keyword in ['news', 'blog', 'wiki', 'forum', 'comment', 'social'])
+        
         # Generate APA7 citation based on available information
         if author and pub_date:
             # Full citation with author and date
             try:
                 pub_year = re.search(r'(\d{4})', pub_date).group(1)
-                citation = f"{author} ({pub_year}). {title} {resource_type}. {domain}. Retrieved {access_date_str}, from {url}"
+                if needs_retrieved:
+                    citation = f"{author} ({pub_year}). {title} {site_name}. Retrieved {access_date_str}, from {url}"
+                else:
+                    citation = f"{author} ({pub_year}). {title} {site_name}. {url}"
             except:
                 # If no pub_date year found, use URL year if available
                 if url_year:
-                    citation = f"{author} ({url_year}). {title} {resource_type}. {domain}. Retrieved {access_date_str}, from {url}"
+                    if needs_retrieved:
+                        citation = f"{author} ({url_year}). {title} {site_name}. Retrieved {access_date_str}, from {url}"
+                    else:
+                        citation = f"{author} ({url_year}). {title} {site_name}. {url}"
                 else:
-                    citation = f"{author} (n.d.). {title} {resource_type}. {domain}. Retrieved {access_date_str}, from {url}"
+                    if needs_retrieved:
+                        citation = f"{author} (n.d.). {title} {site_name}. Retrieved {access_date_str}, from {url}"
+                    else:
+                        citation = f"{author} (n.d.). {title} {site_name}. {url}"
         elif author:
             # Citation with author but no date - use URL year if available
             if url_year:
-                citation = f"{author} ({url_year}). {title} {resource_type}. {domain}. Retrieved {access_date_str}, from {url}"
+                if needs_retrieved:
+                    citation = f"{author} ({url_year}). {title} {site_name}. Retrieved {access_date_str}, from {url}"
+                else:
+                    citation = f"{author} ({url_year}). {title} {site_name}. {url}"
             else:
-                citation = f"{author} (n.d.). {title} {resource_type}. {domain}. Retrieved {access_date_str}, from {url}"
+                if needs_retrieved:
+                    citation = f"{author} (n.d.). {title} {site_name}. Retrieved {access_date_str}, from {url}"
+                else:
+                    citation = f"{author} (n.d.). {title} {site_name}. {url}"
         else:
             # Basic citation without author - use URL year if available
             if url_year:
-                citation = f"{title} {resource_type} ({url_year}). {domain}. Retrieved {access_date_str}, from {url}"
+                if needs_retrieved:
+                    citation = f"{title} ({url_year}). {site_name}. Retrieved {access_date_str}, from {url}"
+                else:
+                    citation = f"{title} ({url_year}). {site_name}. {url}"
             else:
-                citation = f"{title} {resource_type} (n.d.). {domain}. Retrieved {access_date_str}, from {url}"
+                if needs_retrieved:
+                    citation = f"{title} (n.d.). {site_name}. Retrieved {access_date_str}, from {url}"
+                else:
+                    citation = f"{title} (n.d.). {site_name}. {url}"
         
         return citation
         
@@ -652,8 +901,15 @@ def generate_apa7_citation(url: str, scraped_date: str = None) -> str:
         # Fallback citation if all else fails
         parsed_url = urlparse(url)
         domain = parsed_url.netloc.replace('www.', '')
+        site_name = domain.replace('.com', '').replace('.au', '').replace('.org', '').replace('.edu', '').replace('.gov', '').title()
         access_date_str = datetime.now().strftime("%B %d, %Y")
-        return f"Resource (n.d.). {domain}. Retrieved {access_date_str}, from {url}"
+        
+        # Only use retrieved if likely to change
+        needs_retrieved = any(keyword in url.lower() for keyword in ['news', 'blog', 'wiki', 'forum', 'comment', 'social'])
+        if needs_retrieved:
+            return f"Resource (n.d.). {site_name}. Retrieved {access_date_str}, from {url}"
+        else:
+            return f"Resource (n.d.). {site_name}. {url}"
 
 def needs_apa7_citation(url: str) -> bool:
     """Determine if a URL needs an APA7 citation"""

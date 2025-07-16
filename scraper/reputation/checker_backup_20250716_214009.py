@@ -3,35 +3,15 @@ import requests
 import urllib.parse
 import os
 import time
+from dotenv import load_dotenv
+from bs4 import BeautifulSoup
 from urllib.parse import urlparse
 import base64
-
-# Optional imports
-try:
-    from bs4 import BeautifulSoup
-    HAS_BS4 = True
-except ImportError:
-    HAS_BS4 = False
-    print("⚠️ BeautifulSoup not available, some features may be limited")
 
 # --------------------------------
 # 🔐 API Keys & Config
 # --------------------------------
-try:
-    from dotenv import load_dotenv
-    load_dotenv(override=True)
-except ImportError:
-    print("⚠️ python-dotenv not available, loading environment variables manually")
-    # Load .env file manually
-    try:
-        with open('.env', 'r') as f:
-            for line in f:
-                if '=' in line and not line.startswith('#'):
-                    key, value = line.strip().split('=', 1)
-                    os.environ[key] = value
-    except FileNotFoundError:
-        print("⚠️ .env file not found, using system environment variables")
-        pass
+load_dotenv(override=True)
 VT_API_KEY = (
     os.getenv("VT_API_KEY")
     or "0321311ce4e6139cf90dd29e3265b4299d6d0379d8178b3baeb90bcf49133f00"
@@ -44,163 +24,7 @@ VT_DOMAIN_REPORT = "https://www.virustotal.com/api/v3/domains/"
 
 
 # --------------------------------
-# 🎯 Smart Domain Filtering
-# --------------------------------
-TRUSTED_DOMAINS = {
-    # Educational institutions - Australia
-    'edu.au', 'murdoch.edu.au', 'moodleprod.murdoch.edu.au', 'goto.murdoch.edu.au',
-    'libguides.murdoch.edu.au', 'library.murdoch.edu.au', 'our.murdoch.edu.au',
-    'online.murdoch.edu.au', 'murdochuniversity.sharepoint.com',
-    'rmit.edu.au', 'emedia.rmit.edu.au', 'dlsweb.rmit.edu.au',
-    'unsw.edu.au', 'student.unsw.edu.au', 'usyd.edu.au', 'uq.edu.au',
-    'monash.edu', 'anu.edu.au', 'griffith.edu.au', 'qut.edu.au',
-    'curtin.edu.au', 'deakin.edu.au', 'swinburne.edu.au', 'uts.edu.au',
-    
-    # Educational institutions - International
-    'wikipedia.org', 'wikimedia.org', 'en.wikipedia.org',
-    'ac.uk', 'cam.ac.uk', 'ox.ac.uk', 'imperial.ac.uk', 'ucl.ac.uk',
-    'kcl.ac.uk', 'manchester.ac.uk', 'ed.ac.uk', 'warwick.ac.uk',
-    'edu', 'harvard.edu', 'mit.edu', 'stanford.edu', 'berkeley.edu',
-    'caltech.edu', 'princeton.edu', 'yale.edu', 'columbia.edu',
-    'ac.nz', 'edu.sg', 'edu.ca', 'uni.de', 'ac.jp', 'edu.cn',
-    'khanacademy.org', 'coursera.org', 'edx.org', 'udacity.com',
-    'codecademy.com', 'duolingo.com',
-    
-    # Government domains
-    'gov.au', 'gov.uk', 'gov.sg', 'gov', 'government', 'gov.ca', 'gov.nz',
-    'gov.de', 'gov.fr', 'gov.in', 'gov.jp', 'gov.cn', 'europa.eu',
-    'nea.gov.sg', 'ato.gov.au', 'aihw.gov.au', 'abs.gov.au', 'rba.gov.au',
-    'treasury.gov.au', 'health.gov.au', 'education.gov.au',
-    'nih.gov', 'nasa.gov', 'cdc.gov', 'fda.gov', 'sec.gov',
-    'who.int', 'un.org',
-    
-    # Technology & Documentation
-    'docs.python.org', 'python.org', 'github.com', 'gitlab.com', 'bitbucket.org',
-    'stackoverflow.com', 'stackexchange.com', 'developer.mozilla.org', 'w3.org',
-    'docs.oracle.com', 'docs.microsoft.com', 'developer.apple.com',
-    'developer.android.com', 'nodejs.org', 'java.com', 'oracle.com',
-    'php.net', 'ruby-lang.org', 'golang.org', 'rust-lang.org',
-    'scala-lang.org', 'kotlinlang.org',
-    'apache.org', 'gnu.org', 'opensource.org', 'linux.org',
-    'mozilla.org', 'eclipse.org', 'kernel.org',
-    
-    # Major Technology Companies
-    'microsoft.com', 'outlook.com', 'hotmail.com', 'live.com',
-    'office.com', 'sharepoint.com', 'onedrive.com', 'xbox.com',
-    'msn.com', 'bing.com', 'skype.com', 'linkedin.com',
-    'google.com', 'gmail.com', 'youtube.com', 'android.com',
-    'chrome.com', 'chromium.org', 'googleadservices.com',
-    'googlesource.com', 'googleusercontent.com',
-    'apple.com', 'icloud.com', 'itunes.com', 'appstore.com',
-    'mac.com', 'me.com',
-    'amazon.com', 'amazonaws.com', 'aws.amazon.com',
-    'adobe.com', 'salesforce.com', 'sap.com',
-    'vmware.com', 'cisco.com', 'intel.com', 'nvidia.com',
-    'ibm.com', 'redhat.com', 'canonical.com',
-    
-    # News & Media (Reputable)
-    'ft.com', 'wsj.com', 'reuters.com', 'bloomberg.com',
-    'economist.com', 'marketwatch.com', 'cnbc.com',
-    'bbc.com', 'cnn.com', 'theguardian.com', 'nytimes.com',
-    'washingtonpost.com', 'npr.org', 'pbs.org',
-    'abc.net.au', 'sbs.com.au', 'news.com.au', 'smh.com.au',
-    'theage.com.au', 'theaustralian.com.au',
-    
-    # Academic Publishers & Research
-    'springer.com', 'elsevier.com', 'wiley.com', 'nature.com',
-    'sciencedirect.com', 'tandfonline.com', 'sagepub.com',
-    'ieee.org', 'acm.org', 'aaas.org', 'aps.org', 'rsc.org',
-    'researchgate.net', 'academia.edu', 'scholar.google.com',
-    'pubmed.ncbi.nlm.nih.gov', 'arxiv.org', 'ssrn.com',
-    
-    # Cloud & Infrastructure
-    'amazonaws.com', 'azure.com', 'googlecloud.com',
-    'digitalocean.com', 'linode.com', 'vultr.com',
-    'cloudflare.com', 'cloudfront.net', 'fastly.com',
-    'jsdelivr.net', 'unpkg.com', 'cdnjs.com',
-    
-    # Financial Services (Established)
-    'jpmorgan.com', 'goldmansachs.com', 'morganstanley.com',
-    'citigroup.com', 'wellsfargo.com', 'bankofamerica.com',
-    'commbank.com.au', 'anz.com', 'nab.com.au', 'westpac.com.au',
-    'paypal.com', 'stripe.com', 'square.com', 'visa.com',
-    'mastercard.com', 'amex.com'
-}
-
-# Enhanced pattern matching for educational and government domains
-TRUSTED_PATTERNS = {
-    'EDUCATIONAL': ['.edu', '.ac.uk', '.edu.au', '.ac.nz', '.edu.sg', '.edu.ca', '.uni.de'],
-    'GOVERNMENT': ['.gov', '.gov.au', '.gov.uk', '.gov.sg', '.gov.ca', '.gov.nz'],
-    'RESEARCH': ['.int']  # For international research organizations
-}
-
-SUSPICIOUS_TLDS = {
-    '.tk', '.ml', '.ga', '.cf', '.pw', '.top', '.click',
-    '.download', '.stream', '.science', '.racing', '.win'
-}
-
-def is_trusted_domain(url: str) -> bool:
-    """Enhanced trusted domain detection with better URL handling"""
-    try:
-        # Handle URLs without protocol
-        if not url.startswith(('http://', 'https://')):
-            url = 'https://' + url
-        
-        parsed = urlparse(url.lower())
-        domain = parsed.netloc.lower()
-        
-        # Remove www. prefix
-        if domain.startswith('www.'):
-            domain = domain[4:]
-        
-        # 1. Check exact match in trusted domains
-        if domain in TRUSTED_DOMAINS:
-            return True
-        
-        # 2. Check pattern matching for educational and government TLDs
-        for category, patterns in TRUSTED_PATTERNS.items():
-            for pattern in patterns:
-                if domain.endswith(pattern):
-                    return True
-        
-        # 3. Check if domain is a subdomain of any trusted domain
-        for trusted in TRUSTED_DOMAINS:
-            if domain.endswith('.' + trusted) or domain == trusted:
-                return True
-                
-        return False
-    except:
-        return False
-
-def needs_full_scan(url: str) -> bool:
-    """Determine if URL needs full multi-API scanning"""
-    try:
-        parsed = urlparse(url.lower())
-        domain = parsed.netloc.lower()
-        
-        # Check for suspicious TLDs
-        for tld in SUSPICIOUS_TLDS:
-            if domain.endswith(tld):
-                return True
-                
-        # Check for suspicious patterns
-        suspicious_patterns = [
-            'bit.ly', 'tinyurl', 'shortened', 'redirect',
-            'download', 'crack', 'hack', 'free', 'porn',
-            'xxx', 'adult', 'sex', 'casino', 'pharma'
-        ]
-        
-        url_lower = url.lower()
-        for pattern in suspicious_patterns:
-            if pattern in url_lower:
-                return True
-                
-        return False
-    except:
-        return True  # Default to full scan if parsing fails
-
-# --------------------------------
-# 🔎 Utilities  
+# 🔎 Utilities
 # --------------------------------
 def extract_domain_from_url(url: str) -> str:
     try:
@@ -219,62 +43,20 @@ def clean_and_validate_url(url: str) -> str:
     if not url or not url.strip():
         return None
     
-    # Remove extra characters and fix common issues
+    # Remove extra characters
     url = url.strip()
     url = url.strip('()')  # Remove parentheses
     url = url.rstrip('.')  # Remove trailing periods
     
-    # Skip URLs that are clearly text fragments, not actual URLs
-    if any(keyword in url.lower() for keyword in [
-        'ontario, canada:', 'university of waterloo', 'available from',
-        'provides links to', 'many organizations', 'information systems audit',
-        'hosts seminars', 'source for recommended'
-    ]):
-        return None
-    
-    # Extract actual URL from text if it contains URL patterns
-    import re
-    url_pattern = r'https?://[^\s\)]+|www\.[^\s\)]+\.[a-zA-Z]{2,}'
-    url_match = re.search(url_pattern, url)
-    if url_match:
-        url = url_match.group()
-    
-    # Fix common URL issues
+    # Fix common issues
     if url.startswith('www.') and not url.startswith('http'):
         url = 'https://' + url
     
-    # Skip obviously malformed URLs or text fragments
+    # Skip obviously malformed URLs
     if not url.startswith(('http://', 'https://')):
         return None
-    
-    # Skip URLs that are clearly not actual websites
-    if any(invalid in url.lower() for invalid in [
-        'ontario,', 'canada:', 'university of', 'available from',
-        'provides links', 'many organizations', 'information systems'
-    ]):
-        return None
-    
-    # Final validation
-    try:
-        parsed = urlparse(url)
-        if not parsed.netloc or not parsed.scheme:
-            return None
         
-        # Check if domain looks valid
-        if '.' not in parsed.netloc:
-            return None
-            
-        return url
-    except Exception:
-        return None
-
-def is_valid_api_result(result) -> bool:
-    """Check if API result is valid"""
-    if not result or not isinstance(result, tuple) or len(result) != 2:
-        return False
-    
-    reputation, category = result
-    return reputation is not None and category is not None
+    return url
 
 # --------------------------------
 # 🧪 VirusTotal Domain Scan (v3)
@@ -378,12 +160,7 @@ def get_or_scan_url(target_url, wait_for_fresh=False):
     # --------------------------------
     # 🔐 Google Safe Browsing
     # --------------------------------
-def check_safe_browsing(url):
-    """Check URL against Google Safe Browsing API"""
-    if not SAFE_BROWSING_API_KEY:
-        print("❌ Google Safe Browsing API key not found")
-        return None
-        
+    # def check_safe_browsing(url):
     payload = {
         "client": {"clientId": "lms-guardian", "clientVersion": "1.0"},
         "threatInfo": {
@@ -404,35 +181,19 @@ def check_safe_browsing(url):
         response = requests.post(
             f"https://safebrowsing.googleapis.com/v4/threatMatches:find?key={SAFE_BROWSING_API_KEY}",
             json=payload,
-            timeout=5
         )
         response.raise_for_status()
         result = response.json()
 
         if result.get("matches"):
-            threat_type = result["matches"][0].get("threatType", "MALICIOUS")
-            print(f"🚨 Google Safe Browsing detected threat: {threat_type}")
-            
-            # Map threat types to scores
-            threat_scores = {
-                "MALWARE": 95,
-                "SOCIAL_ENGINEERING": 90,
-                "UNWANTED_SOFTWARE": 80,
-                "POTENTIALLY_HARMFUL_APPLICATION": 70,
-                "THREAT_TYPE_UNSPECIFIED": 60
-            }
-            
-            score = threat_scores.get(threat_type, 85)
-            category = f"GOOGLE_SAFE_BROWSING_{threat_type}"
-            
-            return (score, category)
-        else:
-            print("✅ Google Safe Browsing: URL is clean")
-            return (0, "GOOGLE_SAFE_BROWSING_CLEAN")
-            
+            return result["matches"][0].get("threatType", "malicious").lower()
+        return "clean"
     except Exception as e:
         print(f"❌ Safe Browsing error: {e}")
-        return None
+        return "error"
+
+
+VT_API_KEY = "0321311ce4e6139cf90dd29e3265b4299d6d0379d8178b3baeb90bcf49133f00"
 
 
 def vt_v3_get_url_info(url):
@@ -826,7 +587,8 @@ class IPQS:
 def is_valid_api_result(result):
     """
     Check if an API result is valid and usable
-    Returns True if result is a valid tuple with meaningful values
+    Returns True if result is a valid tuple with non-None values
+    Note: -1 scores indicate "unknown" status, not "safe"
     """
     if (result is not None and 
         isinstance(result, tuple) and 
@@ -834,22 +596,20 @@ def is_valid_api_result(result):
         result[0] is not None and 
         result[1] is not None):
         
+        # Check if this is a meaningful result (not just unknown/error)
         score, category = result
         
         # Accept positive scores (actual risk assessments)
         if isinstance(score, (int, float)) and score >= 0:
             return True
         
-        # Accept negative scores only if they have meaningful categories
+        # Accept negative scores only for specific verified categories
         if isinstance(score, (int, float)) and score < 0:
-            if isinstance(category, str) and category:
-                # Only accept specific meaningful negative score categories
-                meaningful_categories = [
-                    "URL_NOT_IN_DATABASE", "GOOGLE_SAFE_BROWSING_CLEAN",
-                    "TRUSTED_MURDOCH_DOMAIN", "SKIPPED_URL"
-                ]
-                return any(cat in category for cat in meaningful_categories)
+            verified_categories = ["CLEAN_VERIFIED", "TRUSTED_MURDOCH_DOMAIN"]
+            if category in verified_categories:
+                return True
         
+        # Reject all other negative scores (unknown/error states)
         return False
     
     return False
@@ -857,153 +617,96 @@ def is_valid_api_result(result):
 
 def analyze_links(scrapeID: int, url: str):
     """
-    🎯 Optimized URL analysis with smart filtering and clean output
+    Analyze a single URL for security risks using VirusTotal and IPQualityScore
     """
     # Define the safe update function first
-    def safe_update_risk(scrape_id: int, score: float, category: str, analyzed_url: str):
+    def safe_update_risk(scrape_id: int, score: float, category: str, url_arg: str = ""):
         try:
             category = category[:300] if len(category) > 300 else category
             update_url = f"http://127.0.0.1:8000/scrapedcontents/updaterisk/{scrape_id}"
             response = requests.put(update_url, params={"score": score, "category": category})
             response.raise_for_status()
             
-            # Clean, structured output
-            if score > 50:
-                print(f"🔞 BLOCKED  | ID:{scrape_id} | Score:{score} | {category}")
-            elif score == 0:
-                print(f"✅ SAFE     | ID:{scrape_id} | Score:{score} | {category}")
+            # Add clearer logging for negative scores
+            if score < 0:
+                print(f"⚠️ Updated {url_arg} with UNKNOWN status (score {score}) and category {category}")
             else:
-                print(f"⚠️ SUSPICIOUS | ID:{scrape_id} | Score:{score} | {category}")
-            
+                print(f"✅ Updated {url_arg} with score {score} and category {category}")
             return True
         except Exception as e:
-            print(f"❌ UPDATE FAILED | ID:{scrape_id} | Error: {e}")
+            print(f"❌ Error updating risk for {url_arg}: {e}")
             return False
-    
-    def check_nsfw_content(url_to_check: str) -> tuple:
-        """Check for NSFW content using JigsawStack and enhanced detection"""
-        try:
-            from content_filter import ContentFilter
-            filter_obj = ContentFilter()
-            
-            # Check for inappropriate content
-            is_nsfw, reason = filter_obj.is_pornography_url(url_to_check)
-            
-            if is_nsfw:
-                # Extract confidence from reason if available
-                if "Confidence:" in reason:
-                    confidence_part = reason.split("Confidence:")[-1].strip()
-                    try:
-                        confidence = int(confidence_part.rstrip('%'))
-                    except:
-                        confidence = 85
-                else:
-                    confidence = 85 if "JigsawStack AI" in reason else 75
-                
-                return True, f"NSFW_{reason}", confidence
-            
-            return False, "Content appears safe", 0
-            
-        except Exception as e:
-            print(f"⚠️ NSFW check failed: {e}")
-            return False, "NSFW_CHECK_UNAVAILABLE", 0
     
     # Clean and validate URL first
     cleaned_url = clean_and_validate_url(url)
     if not cleaned_url:
-        print(f"❌ INVALID   | {url}")
+        print(f"❌ Invalid URL format: {url}")
         safe_update_risk(scrapeID, -1, "INVALID_URL", url)
         return
     
-    # Use cleaned URL consistently throughout
-    print(f"\n🔍 ANALYZING | {cleaned_url}")
+    # Use cleaned URL for processing
+    print(f"\n🔍 Analyzing URL: {cleaned_url}")
     if cleaned_url != url:
-        print(f"🔧 CLEANED   | From: {url}")
+        print(f"🔧 Cleaned from: {url}")
     
-    # STEP 1: Check if this is a trusted domain (skip expensive API calls)
-    if is_trusted_domain(cleaned_url):
-        print(f"🏫 TRUSTED   | Skipping API calls for known safe domain")
-        safe_update_risk(scrapeID, 0, "TRUSTED_DOMAIN", cleaned_url)
+    # Check if this is a Murdoch URL that should be trusted
+    murdoch_domains = [
+        'murdoch.edu.au', 'moodleprod.murdoch.edu.au', 'goto.murdoch.edu.au',
+        'libguides.murdoch.edu.au', 'library.murdoch.edu.au', 'our.murdoch.edu.au',
+        'online.murdoch.edu.au', 'murdochuniversity.sharepoint.com'
+    ]
+    
+    url_lower = cleaned_url.lower()
+    if any(domain in url_lower for domain in murdoch_domains):
+        print(f"🏫 Murdoch domain detected - marking as trusted: {cleaned_url}")
+        safe_update_risk(scrapeID, 0, "TRUSTED_MURDOCH_DOMAIN", cleaned_url)
         return
     
-    # STEP 2: NSFW Content Check (Primary Filter)
-    print("🔞 NSFW CHECK | JigsawStack AI scanning...")
-    is_nsfw, nsfw_reason, nsfw_confidence = check_nsfw_content(cleaned_url)
-    if is_nsfw:
-        print(f"🔞 NSFW FOUND | {nsfw_reason}")
-        safe_update_risk(scrapeID, nsfw_confidence, nsfw_reason, cleaned_url)
-        return
-    else:
-        print(f"✅ NSFW SAFE | {nsfw_reason}")
-    
-    # STEP 3: Skip URLs that shouldn't be scanned
+    # Skip URLs that shouldn't be scanned
     if should_skip_url_scanning(cleaned_url):
         safe_update_risk(scrapeID, 0, "SKIPPED_URL", cleaned_url)
         return
 
-    # STEP 4: Smart API Selection based on URL characteristics
-    needs_full = needs_full_scan(cleaned_url)
-    
-    if not needs_full:
-        # For low-risk URLs, use minimal scanning
-        print("🔄 LIGHT SCAN | URL appears low-risk, using minimal checks")
-        
-        # Try VirusTotal only for basic check
-        print("🦠 VIRUSTOTAL | Basic reputation check...")
+    # Skip connectivity check - let security APIs handle unreachable URLs
+    # This allows cached results and reputation analysis even for down sites
+
+    try:
+        # Step 1: Try VirusTotal first
+        print("🦠 Checking VirusTotal...")
         vt_result = vt_v3_get_url_info(cleaned_url)
         
+        # Check if VirusTotal succeeded
         if is_valid_api_result(vt_result):
             reputation, category = vt_result
-            print(f"✅ VT SUCCESS | Score: {reputation} | Category: {category}")
+            print(f"✅ VirusTotal successful - Score: {reputation}, Category: {category}")
             safe_update_risk(scrapeID, reputation, category, cleaned_url)
             return
         
-        # If VirusTotal fails, try Google Safe Browsing
-        print("🛡️ GOOGLE SB  | Fallback security check...")
-        gsb_result = check_safe_browsing(cleaned_url)
+        # Step 2: VirusTotal failed, try IPQualityScore
+        print("❌ VirusTotal failed or returned invalid result, trying IPQualityScore...")
+        ipqs_result = ipqualityscore_fallback(cleaned_url)
         
-        if is_valid_api_result(gsb_result):
-            reputation, category = gsb_result
-            print(f"✅ GSB SUCCESS | Score: {reputation} | Category: {category}")
+        if is_valid_api_result(ipqs_result):
+            reputation, category = ipqs_result
+            print(f"✅ IPQualityScore successful - Score: {reputation}, Category: {category}")
             safe_update_risk(scrapeID, reputation, category, cleaned_url)
             return
         
-        # If both fail, mark as unknown but likely safe
-        print("⚠️ UNKNOWN   | APIs failed, assuming safe for trusted-looking URL")
-        safe_update_risk(scrapeID, 0, "UNKNOWN_LIKELY_SAFE", cleaned_url)
-        return
-    
-    else:
-        # For suspicious URLs, use full scanning
-        print("🚨 FULL SCAN | URL needs comprehensive analysis")
+        # Step 3: IPQualityScore failed, try MetaDefender as final fallback
+        print("❌ IPQualityScore failed or returned invalid result, trying MetaDefender...")
+        md_result = metadefender_fallback(cleaned_url)
         
-        # Try all APIs in sequence
-        apis_to_try = [
-            ("VirusTotal", vt_v3_get_url_info),
-            ("Google Safe Browsing", check_safe_browsing),
-            ("IPQualityScore", ipqualityscore_fallback),
-            ("MetaDefender", metadefender_fallback)
-        ]
+        if is_valid_api_result(md_result):
+            reputation, category = md_result
+            print(f"✅ MetaDefender successful - Score: {reputation}, Category: {category}")
+            safe_update_risk(scrapeID, reputation, category, cleaned_url)
+            return
         
-        for api_name, api_func in apis_to_try:
-            try:
-                print(f"🔄 {api_name.upper()} | Scanning...")
-                result = api_func(cleaned_url)
-                
-                if is_valid_api_result(result):
-                    reputation, category = result
-                    print(f"✅ {api_name.upper()} SUCCESS | Score: {reputation} | Category: {category}")
-                    safe_update_risk(scrapeID, reputation, category, cleaned_url)
-                    return
-                else:
-                    print(f"❌ {api_name.upper()} FAILED | Invalid result")
-                    
-            except Exception as e:
-                print(f"❌ {api_name.upper()} ERROR | {e}")
-                continue
-        
-        # All APIs failed for suspicious URL
-        print("❌ ALL FAILED | Cannot determine safety - marking as unknown")
-        safe_update_risk(scrapeID, -1, "UNKNOWN_ALL_APIS_FAILED", cleaned_url)
+        # Step 4: All APIs failed or returned unknown results
+        print("❌ All security APIs failed or returned unknown results")
+        print("⚠️ URL status is unknown - cannot determine safety")
+        safe_update_risk(scrapeID, -1, "UNKNOWN_STATUS_ALL_APIS_FAILED", cleaned_url)
 
-    print("─" * 80)  # Clean separator
+    except Exception as e:
+        print(f"❌ Critical error analyzing {cleaned_url}: {e}")
+        safe_update_risk(scrapeID, -1, "CRITICAL_ERROR", cleaned_url)

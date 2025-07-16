@@ -142,10 +142,36 @@ def get_safe_to_download(db: Session):
           AND risk_score >= 0
           AND is_paywall = false
           AND localurl IS NULL
+          AND (risk_category IS NULL OR risk_category NOT LIKE '%porn%')
+          AND (risk_category IS NULL OR risk_category NOT LIKE '%adult%')
+          AND (risk_category IS NULL OR risk_category NOT LIKE '%explicit%')
+          AND (url_link NOT LIKE '%xvideos%' AND url_link NOT LIKE '%pornhub%' 
+               AND url_link NOT LIKE '%xnxx%' AND url_link NOT LIKE '%redtube%'
+               AND url_link NOT LIKE '%youporn%' AND url_link NOT LIKE '%adult%')
     """
     )
     result = db.execute(sql).mappings().all()
-    return list(result)
+    
+    # Additional filtering using content filter
+    try:
+        import sys
+        import os
+        sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+        from content_filter import content_filter
+        
+        filtered_results = []
+        for item in result:
+            url = item.get('url_link', '')
+            should_exclude, reason = content_filter.should_exclude_from_local_storage(url)
+            if not should_exclude:
+                filtered_results.append(item)
+            else:
+                print(f"🚫 Excluded from local storage: {url} - {reason}")
+        
+        return filtered_results
+    except Exception as e:
+        print(f"⚠️ Content filter not available, using basic filtering: {e}")
+        return list(result)
 
 
 def get_localcopies_by_module(db: Session, module_id: int):

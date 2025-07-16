@@ -7,7 +7,7 @@ from datetime import datetime
 import json
 import re
 
-SINGLEFILE_PATH = "/usr/local/bin/single-file"
+SINGLEFILE_PATH = "/usr/bin/single-file"
 # Use /tmp for server compatibility or create user-accessible folder
 if os.path.exists("/var/www") and os.access("/var/www", os.W_OK):
     BASE_FOLDER = "/var/www/localrepo"

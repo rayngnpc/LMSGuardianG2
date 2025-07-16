@@ -11,6 +11,14 @@ import hashlib
 import pytz
 from .downloadfiles import *
 
+# Import paywall detection
+try:
+    from ..paywall.main import detect_paywall_from_html
+    PAYWALL_DETECTION_AVAILABLE = True
+except ImportError:
+    print("⚠️ Paywall detection not available - continuing without it")
+    PAYWALL_DETECTION_AVAILABLE = False
+
 load_dotenv(override=True)
 USERNAME = os.getenv("MOODLE_USERNAME")
 PASSWORD = os.getenv("MOODLE_PASSWORD")
@@ -127,6 +135,143 @@ def is_external_link(url: str) -> bool:
     except Exception as e:
         print(f"[WARNING] Failed to parse URL: {url} - {e}")
         return True  # Treat unknowns as external for safety
+
+
+def detect_paywall_for_url(url: str, html_content: str = None) -> bool:
+    """
+    Enhanced paywall detection with expanded domain coverage and improved patterns
+    """
+    
+    # First try domain-based detection (fast and reliable)
+    try:
+        from urllib.parse import urlparse
+        
+        # Enhanced paywall domains - significantly expanded for better coverage
+        PAYWALL_DOMAINS = {
+            # Original major sites
+            'wsj.com', 'ft.com', 'nytimes.com', 'bloomberg.com', 'economist.com',
+            'washingtonpost.com', 'newyorker.com', 'theatlantic.com', 'jstor.org',
+            'nature.com', 'science.org', 'springer.com', 'wiley.com', 'elsevier.com',
+            
+            # Additional news and magazine sites
+            'spectator.co.uk', 'foreignaffairs.com', 'harpers.org', 'newstatesman.com',
+            'thetimes.co.uk', 'telegraph.co.uk', 'vanityfair.com', 'wired.com',
+            'medium.com', 'substack.com', 'politico.com', 'axios.com', 'forbes.com',
+            'businessinsider.com', 'fortune.com', 'scientificamerican.com',
+            'nationalgeographic.com', 'slate.com', 'salon.com', 'vox.com',
+            
+            # Academic and professional sites
+            'ieee.org', 'acm.org', 'cambridge.org', 'oxford.org', 'tandfonline.com',
+            'sagepub.com', 'jama.jamanetwork.com', 'nejm.org', 'bmj.com',
+            'thelancet.com', 'cell.com', 'sciencedirect.com',
+            
+            # Trade and tech publications
+            'techcrunch.com', 'venturebeat.com', 'recode.net', 'theverge.com',
+            'arstechnica.com', 'engadget.com', 'gizmodo.com', 'mashable.com',
+            'readwrite.com', 'gigaom.com', 'allthingsd.com', 'pandodaily.com',
+            
+            # Financial publications
+            'marketwatch.com', 'investopedia.com', 'morningstar.com',
+            'fool.com', 'seekingalpha.com', 'zacks.com', 'thestreet.com',
+            'reuters.com', 'cnbc.com', 'barrons.com',
+            
+            # International publications
+            'guardian.co.uk', 'independent.co.uk', 'dailymail.co.uk',
+            'mirror.co.uk', 'express.co.uk', 'thesun.co.uk', 'standard.co.uk',
+            'eveningstandard.co.uk', 'metro.co.uk', 'cityam.com',
+            
+            # Lifestyle and entertainment
+            'gq.com', 'vogue.com', 'elle.com', 'marieclaire.com',
+            'cosmopolitan.com', 'harpersbazaar.com', 'esquire.com',
+            'rollingstone.com', 'people.com', 'time.com', 'newsweek.com',
+            'usnews.com', 'usatoday.com', 'latimes.com', 'chicagotribune.com',
+            
+            # Sports and entertainment
+            'espn.com', 'si.com', 'bleacherreport.com', 'nfl.com',
+            'nba.com', 'mlb.com', 'nhl.com', 'variety.com',
+            'hollywoodreporter.com', 'deadline.com', 'entertainment.com',
+            
+            # Subscription platforms
+            'patreon.com', 'memberful.com', 'gumroad.com',
+            'teachable.com', 'thinkific.com', 'kajabi.com', 'podia.com',
+            
+            # Learning platforms
+            'coursera.org', 'udemy.com', 'skillshare.com', 'masterclass.com',
+            'pluralsight.com', 'lynda.com', 'codecademy.com', 'treehouse.com',
+            'edx.org', 'brilliant.org', 'datacamp.com'
+        }
+        
+        # Enhanced URL patterns that indicate paywall/subscription content
+        PAYWALL_PATTERNS = [
+            '/subscribe', '/subscription', '/premium', '/member', '/membership',
+            '/paywall', '/paid', '/pro', '/plus', '/upgrade', '/billing',
+            '/checkout', '/payment', '/purchase', '/buy', '/pricing',
+            '/plans', '/tiers', '/unlock', '/access', '/exclusive',
+            '/vip', '/elite', '/gold', '/platinum', '/diamond',
+            '/signin', '/login', '/register', '/signup', '/join',
+            '/trial', '/demo', '/preview', '/teaser', '/excerpt'
+        ]
+        
+        parsed_url = urlparse(url)
+        domain = parsed_url.netloc.lower()
+        
+        # Remove www. prefix
+        if domain.startswith('www.'):
+            domain = domain[4:]
+        
+        # Primary method: Check for exact domain match
+        if domain in PAYWALL_DOMAINS:
+            print(f"🔒 Paywall detected for {url}: Known paywall domain ({domain})")
+            return True
+        
+        # Check for subdomain matches
+        for paywall_domain in PAYWALL_DOMAINS:
+            if domain.endswith(paywall_domain):
+                print(f"🔒 Paywall detected for {url}: Subdomain of paywall domain ({paywall_domain})")
+                return True
+        
+        # Secondary method: URL pattern detection
+        url_lower = url.lower()
+        for pattern in PAYWALL_PATTERNS:
+            if pattern in url_lower:
+                print(f"🔒 Paywall detected for {url}: URL pattern ({pattern})")
+                return True
+        
+        # If domain-based detection didn't find paywall, it's likely clean
+        print(f"✅ No paywall detected for {url} (enhanced check)")
+        return False
+        
+    except Exception as e:
+        print(f"⚠️ Enhanced paywall detection failed for {url}: {e}")
+    
+    # Fallback to original detection method if available and domain check failed
+    if not PAYWALL_DETECTION_AVAILABLE:
+        return False
+    
+    try:
+        if html_content:
+            # Use HTML content if available
+            result = detect_paywall_from_html(html_content)
+        else:
+            # Import and use the full detection method
+            from ..paywall.main import classify_page_access
+            result = classify_page_access(url)
+        
+        # Check if the result indicates paywall or controlled access
+        status = result.get('status', '').lower()
+        if status in ['paywalled', 'controlled_access']:
+            print(f"🔒 Paywall detected for {url}: {result.get('reason', 'Unknown')}")
+            return True
+        elif status == 'unavailable':
+            print(f"⚠️ Could not check paywall for {url}: {result.get('reason', 'Unknown')}")
+            return False
+        else:
+            print(f"✅ No paywall detected for {url}")
+            return False
+            
+    except Exception as e:
+        print(f"❌ Error detecting paywall for {url}: {e}")
+        return False
 
 
 def post_scraped_link(
@@ -485,8 +630,11 @@ async def extract_links(page: Page, base_url: str, session_id: int, module_id: i
         if is_external_link(full_url):
             print("EXTERNAL URL DETECTED")
 
+            # Detect paywall for external links
+            is_paywall = detect_paywall_for_url(full_url)
+            
             external_links.append(full_url)
-            post_scraped_link(session_id, module_id, full_url)
+            post_scraped_link(session_id, module_id, full_url, is_paywall=is_paywall)
             continue
 
         if "mod/resource/view.php" in full_url:
@@ -505,8 +653,12 @@ async def extract_links(page: Page, base_url: str, session_id: int, module_id: i
                     print(
                         "EXTERNAL FILE URL DETECTED AFTER RESOLVING INTERNAL MIDDLEWARE"
                     )
+                    
+                    # Detect paywall for external resolved URLs
+                    is_paywall = detect_paywall_for_url(resolved_url)
+                    
                     external_links.append(resolved_url)
-                    post_scraped_link(session_id, module_id, resolved_url)
+                    post_scraped_link(session_id, module_id, resolved_url, is_paywall=is_paywall)
                     continue
 
                 # Apply exclusion rules only to internal URLs
