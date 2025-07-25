@@ -22,7 +22,7 @@ class ScrapedContentBase(BaseModel):
     risk_score: Optional[float] = None
     content_location: Optional[str] = None
     is_paywall: Optional[bool] = False
-    apa7: Optional[str] = None
+    apa7: Optional[str] = None  # Legacy field
     localurl: Optional[str] = None
 
 

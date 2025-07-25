@@ -7,10 +7,23 @@ import fitz  # PyMuPDF
 import subprocess
 import shutil
 from urllib.parse import urlparse
+import re
+import pptx
+import openpyxl
+import csv
 
 # ---------- Config ----------
 TO_PROCESS_FURTHER_PATH = "scraper/scraper/toProcessFurther"
-SUPPORTED_EXTENSIONS = {".docx", ".doc", ".pdf", ".zip"}
+SUPPORTED_EXTENSIONS = {
+    ".docx",
+    ".doc",
+    ".pdf",
+    ".zip",
+    ".pptx",
+    ".ppt",
+    ".xlsx",
+    ".csv",
+}
 
 
 # ---------- Extractors ----------
@@ -18,13 +31,15 @@ def extract_links_from_docx(filepath):
     links = []
     try:
         doc = Document(filepath)
-        for para in doc.paragraphs:
-            for run in para.runs:
-                if "http" in run.text or "www." in run.text:
-                    links.append(run.text.strip())
         for rel in doc.part.rels.values():
-            if "http" in str(rel.target_ref):
-                links.append(str(rel.target_ref))
+            if "hyperlink" in rel.reltype.lower() and "http" in rel.target_ref:
+                link = rel.target_ref.strip()
+                links.append(link)
+        for para in doc.paragraphs:
+            found_urls = re.findall(r"https?://\S+|www\.\S+", para.text)
+            for url in found_urls:
+                cleaned_url = url.rstrip(".,;)!?\"'")
+                links.append(cleaned_url)
     except Exception as e:
         print(f"[WARNING] Error reading .docx file {filepath}: {e}")
     return links
@@ -53,17 +68,103 @@ def extract_links_from_pdf(filepath):
     try:
         doc = fitz.open(filepath)
         for page in doc:
-            text = page.get_text()
-            for word in text.split():
-                if "http" in word or "www." in word:
-                    links.append(word.strip())
             for link in page.get_links():
                 uri = link.get("uri", "")
-                if uri:
+                if uri and "http" in uri:
                     links.append(uri.strip())
+            text = page.get_text("text")
+            found_urls = re.findall(r"https?://\S+|www\.\S+", text)
+            for url in found_urls:
+                cleaned_url = url.rstrip(".,;)!?\"'")
+                links.append(cleaned_url)
         doc.close()
     except Exception as e:
         print(f"[WARNING] Error reading PDF file {filepath}: {e}")
+    return links
+
+
+def extract_links_from_pptx(filepath):
+    links = []
+    try:
+        prs = pptx.Presentation(filepath)
+        for slide_num, slide in enumerate(prs.slides, start=1):
+            for shape in slide.shapes:
+                # Check textual content
+                if hasattr(shape, "text"):
+                    found_urls = re.findall(r"https?://\S+|www\.\S+", shape.text)
+                    for url in found_urls:
+                        cleaned = url.rstrip(".,;)!?\"'")
+                        print(f"[PPTX-TEXT] Slide {slide_num}: {cleaned}")
+                        links.append(cleaned)
+
+                # Check for click-action hyperlinks
+                if (
+                    hasattr(shape, "click_action")
+                    and shape.click_action.hyperlink
+                    and shape.click_action.hyperlink.address
+                ):
+                    address = shape.click_action.hyperlink.address.strip()
+                    print(f"[PPTX-LINK] Slide {slide_num}: {address}")
+                    links.append(address)
+    except Exception as e:
+        print(f"[WARNING] Error reading PPTX file {filepath}: {e}")
+    return links
+
+
+import subprocess
+import re
+
+
+def extract_links_from_ppt(filepath):
+    links = []
+    try:
+        result = subprocess.run(["strings", filepath], capture_output=True, text=True)
+        if result.returncode == 0:
+            for line in result.stdout.splitlines():
+                found_urls = re.findall(r"https?://\S+|www\.\S+", line)
+                for url in found_urls:
+                    cleaned = url.rstrip(".,;)!?\"'")
+                    if "schemas.openxmlformats.org" in cleaned:
+                        continue  # ❌ Skip known false positives
+                    print(f"[PPT] Found: {cleaned}")
+                    links.append(cleaned)
+    except FileNotFoundError:
+        print(
+            "[ERROR] 'strings' command not found. Install with: sudo apt install binutils"
+        )
+    except Exception as e:
+        print(f"[WARNING] Error reading PPT file {filepath}: {e}")
+    return links
+
+
+def extract_links_from_xlsx(filepath):
+    links = []
+    try:
+        wb = openpyxl.load_workbook(filepath, data_only=True)
+        for sheet in wb.worksheets:
+            for row in sheet.iter_rows():
+                for cell in row:
+                    if cell.value and isinstance(cell.value, str):
+                        found_urls = re.findall(r"https?://\S+|www\.\S+", cell.value)
+                        for url in found_urls:
+                            links.append(url.rstrip(".,;)!?\"'"))
+    except Exception as e:
+        print(f"[WARNING] Error reading XLSX file {filepath}: {e}")
+    return links
+
+
+def extract_links_from_csv(filepath):
+    links = []
+    try:
+        with open(filepath, newline="", encoding="utf-8", errors="ignore") as f:
+            reader = csv.reader(f)
+            for row in reader:
+                for cell in row:
+                    found_urls = re.findall(r"https?://\S+|www\.\S+", cell)
+                    for url in found_urls:
+                        links.append(url.rstrip(".,;)!?\"'"))
+    except Exception as e:
+        print(f"[WARNING] Error reading CSV file {filepath}: {e}")
     return links
 
 
@@ -78,10 +179,8 @@ def extract_zip_recursive(zip_path, parent_display_path, all_links):
                 for fname in files:
                     fpath = os.path.join(root, fname)
                     ext = os.path.splitext(fpath)[1].lower()
-
                     display_path = os.path.relpath(fpath, temp_dir)
                     display_path = f"{parent_display_path}/{display_path}"
-
                     if ext in SUPPORTED_EXTENSIONS:
                         if ext == ".zip":
                             extract_zip_recursive(fpath, display_path, all_links)
@@ -92,7 +191,6 @@ def extract_zip_recursive(zip_path, parent_display_path, all_links):
         print(f"[WARNING] Failed to handle ZIP {zip_path}: {e}")
 
 
-# ---------- File Scanner ----------
 def scan_single_file(filepath):
     ext = os.path.splitext(filepath)[1].lower()
     if ext == ".docx":
@@ -101,6 +199,14 @@ def scan_single_file(filepath):
         return extract_links_from_doc(filepath)
     elif ext == ".pdf":
         return extract_links_from_pdf(filepath)
+    elif ext == ".pptx":
+        return extract_links_from_pptx(filepath)
+    elif ext == ".ppt":
+        return extract_links_from_ppt(filepath)
+    elif ext == ".xlsx":
+        return extract_links_from_xlsx(filepath)
+    elif ext == ".csv":
+        return extract_links_from_csv(filepath)
     return []
 
 
@@ -140,8 +246,11 @@ def unzipFolders():
 
 
 # ---------- ClamAV Scanner ----------
+
+
 def scanWithClamAV():
     print("\n[INFO] Running ClamAV scan...")
+
     scan_command = [
         "clamscan",
         "-r",
@@ -149,12 +258,37 @@ def scanWithClamAV():
         "--no-summary",
         TO_PROCESS_FURTHER_PATH,
     ]
+
     try:
         result = subprocess.run(
             scan_command, capture_output=True, text=True, check=False
         )
-        print("[INFO] Scan complete.\n")
-        print(result.stdout if result.stdout else "[INFO] No infected files found.")
+
+        output = result.stdout.strip()
+        if not output:
+            print("[INFO] No infected files found.")
+            return
+
+        print("[INFO] Scan complete. Parsing infected files...\n")
+
+        deleted_count = 0
+        for line in output.splitlines():
+            if line.endswith("FOUND"):
+                filepath = line.split(":")[0].strip()
+                try:
+                    os.remove(filepath)
+                    print(f"🗑️ Deleted infected file: {filepath}")
+                    deleted_count += 1
+                except Exception as e:
+                    print(f"❌ Failed to delete {filepath}: {e}")
+
+        if deleted_count == 0:
+            print(
+                "[INFO] No files deleted. Possibly false positives or permission errors."
+            )
+        else:
+            print(f"[SUCCESS] {deleted_count} infected file(s) deleted.")
+
     except FileNotFoundError:
         print("[ERROR] clamscan not found. Install it with: sudo apt install clamav")
 
@@ -177,15 +311,46 @@ def clear_directory():
             print(f"[ERROR] Could not delete {item_path}. Reason: {e}")
 
 
+from urllib.parse import urlparse, urlunparse
+
+
+def normalize_url(url):
+    # Step 1: Add scheme if missing
+    if not url.startswith("http://") and not url.startswith("https://"):
+        url = "https://" + url
+
+    parsed = urlparse(url)
+
+    # Step 2: Check if path is missing trailing slash
+    path = parsed.path
+
+    # Skip if path ends with file-like extension
+    if not path.endswith("/") and not re.search(r"\.[a-zA-Z0-9]{2,5}$", path):
+        path += "/"
+
+    # Rebuild the full URL
+    normalized = urlunparse(
+        (
+            parsed.scheme,
+            parsed.netloc,
+            path,
+            parsed.params,
+            parsed.query,
+            parsed.fragment,
+        )
+    )
+    return normalized
+
 
 # ---------- Main ----------
 def downloadFilesAndCheck():
+    print("=" * 50)
+    print("---Processing Downloaded Files---")
     unzipFolders()
     scanWithClamAV()
     found_links = scan_folder_for_links(TO_PROCESS_FURTHER_PATH)
 
     print("\n[INFO] Scan Summary:")
-
     all_scanned_files = set()
     all_links = []
 
@@ -202,16 +367,16 @@ def downloadFilesAndCheck():
         links = found_links.get(filepath, [])
         print(f"\n[FILE] {filepath} - Found {len(links)} link(s):")
         for link in links:
-            print(f"   [LINK] {link}")
-            all_links.append(link)
-
-    
+            normalized = normalize_url(link)
+            print(f"   [LINK] {normalized}")
+            all_links.append(normalized)
 
     print("\n[INFO] Total Links Found:")
     for link in all_links:
         print(f"   [SCRAPE] {link}")
 
     clear_directory()
+    print("=" * 50)
     return all_links
 
 

@@ -151,23 +151,26 @@ def get_safe_to_download(db: Session):
     """
     )
     result = db.execute(sql).mappings().all()
-    
+
     # Additional filtering using content filter
     try:
         import sys
         import os
+
         sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
         from content_filter import content_filter
-        
+
         filtered_results = []
         for item in result:
-            url = item.get('url_link', '')
-            should_exclude, reason = content_filter.should_exclude_from_local_storage(url)
+            url = item.get("url_link", "")
+            should_exclude, reason = content_filter.should_exclude_from_local_storage(
+                url
+            )
             if not should_exclude:
                 filtered_results.append(item)
             else:
                 print(f"🚫 Excluded from local storage: {url} - {reason}")
-        
+
         return filtered_results
     except Exception as e:
         print(f"⚠️ Content filter not available, using basic filtering: {e}")
@@ -186,3 +189,9 @@ def get_localcopies_by_module(db: Session, module_id: int):
     )
     result = db.execute(sql, {"module_id": module_id}).mappings().all()
     return list(result)
+
+
+def get_scrapedcontent_by_id(db: Session, scraped_id: int):
+    sql = text("SELECT * FROM scraped_contents WHERE scraped_id = :scraped_id")
+    result = db.execute(sql, {"scraped_id": scraped_id}).mappings().fetchone()
+    return dict(result) if result else None

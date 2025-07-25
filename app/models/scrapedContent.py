@@ -26,7 +26,7 @@ class ScrapedContent(Base):
     risk_score = Column(Float)
     content_location = Column(Text)
     is_paywall = Column(Boolean, default=False)
-    apa7 = Column(Text)
+    apa7 = Column(Text)  # Legacy field for backward compatibility
 
     module = relationship("Module", back_populates="contents")
     session = relationship("ScraperSession", back_populates="contents")

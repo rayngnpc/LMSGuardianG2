@@ -4,7 +4,6 @@ from datetime import datetime
 
 
 class ScraperSessionBase(BaseModel):
-    session_id: int
     started_at: Optional[datetime] = None
     ended_at: Optional[datetime] = None
     completion_status: Optional[str] = None

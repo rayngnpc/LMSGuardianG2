@@ -2,26 +2,73 @@ import os
 import re
 import asyncio
 import requests
+import socket
+import httpx
 from datetime import datetime
 from urllib.parse import urljoin, urlparse, unquote
 from dotenv import load_dotenv
-from playwright.async_api import async_playwright, Page
+from playwright.async_api import async_playwright, Page, Error as PlaywrightError
 from .utils import *
 import hashlib
 import pytz
 from .downloadfiles import *
+from typing import Tuple
 
 # Import paywall detection
 try:
-    from ..paywall.main import detect_paywall_from_html
+    from scraper.paywall.main import detect_paywall_from_html
+    from scraper.paywall.enhanced_detector import (
+        enhanced_detect_paywall,
+        create_enhanced_detector,
+    )
+
     PAYWALL_DETECTION_AVAILABLE = True
+    ENHANCED_PAYWALL_AVAILABLE = True
 except ImportError:
     print("⚠️ Paywall detection not available - continuing without it")
     PAYWALL_DETECTION_AVAILABLE = False
+    ENHANCED_PAYWALL_AVAILABLE = False
+
+# Legacy APA citation system is stable and produces compliant APA 7th edition citations
+# Enhanced system is disabled due to import issues - legacy system is sufficient
+APA_CITATION_AVAILABLE = False
 
 load_dotenv(override=True)
 USERNAME = os.getenv("MOODLE_USERNAME")
 PASSWORD = os.getenv("MOODLE_PASSWORD")
+
+# Global duplicate tracking system
+LINK_OCCURRENCES = {}
+
+
+def track_link_occurrence(url, page_title, section_context, link_context, page_url):
+    """Track all occurrences of each URL with detailed location information"""
+    if url not in LINK_OCCURRENCES:
+        LINK_OCCURRENCES[url] = []
+
+    occurrence_data = {
+        "url": url,
+        "page_title": page_title,
+        "section_context": section_context,
+        "link_context": link_context,
+        "page_url": page_url,
+        "timestamp": datetime.now().isoformat(),
+        "occurrence_number": len(LINK_OCCURRENCES[url]) + 1,
+    }
+
+    LINK_OCCURRENCES[url].append(occurrence_data)
+    return len(LINK_OCCURRENCES[url])
+
+
+def get_link_occurrences(url):
+    """Get all occurrences for a specific URL"""
+    return LINK_OCCURRENCES.get(url, [])
+
+
+def reset_occurrence_tracking():
+    """Reset the occurrence tracking for a new scan"""
+    global LINK_OCCURRENCES
+    LINK_OCCURRENCES = {}
 
 
 # Configuration from Environment Variables
@@ -60,8 +107,6 @@ EXCLUDED_PATH_PREFIXES = [
     "/moodle/user",
 ]
 
-import requests
-
 
 def is_publicly_accessible(url: str) -> tuple[bool, bool]:
     """
@@ -99,11 +144,11 @@ def is_external_link(url: str) -> bool:
     internal_domains = [
         "10.51.33.25",  # local Moodle IP
     ]
-    
+
     # All Murdoch domains are considered trusted (internal)
     trusted_murdoch_domains = [
         "murdoch.edu.au",
-        "moodleprod.murdoch.edu.au", 
+        "moodleprod.murdoch.edu.au",
         "murdochuniversity.sharepoint.com",
         "goto.murdoch.edu.au",
         "libguides.murdoch.edu.au",
@@ -111,27 +156,30 @@ def is_external_link(url: str) -> bool:
         "our.murdoch.edu.au",
         "online.murdoch.edu.au",
         "myanswers.custhelp.com",  # Murdoch support system
+        "murdoch.navexone.com",
     ]
 
     try:
         parsed = urlparse(url)
         domain = parsed.hostname or ""
-        
+
         # Check if it's our local internal domain
         if any(domain == d or domain.endswith(f".{d}") for d in internal_domains):
             return False  # Internal
-            
+
         # Check if it's a trusted Murdoch domain
-        if any(domain == d or domain.endswith(f".{d}") for d in trusted_murdoch_domains):
+        if any(
+            domain == d or domain.endswith(f".{d}") for d in trusted_murdoch_domains
+        ):
             return False  # Trusted, treat as internal
-            
+
         # Check for any murdoch.edu.au subdomains
         if domain.endswith(".murdoch.edu.au") or domain == "murdoch.edu.au":
             return False  # All Murdoch domains are trusted
-            
+
         # Everything else is external
         return True
-        
+
     except Exception as e:
         print(f"[WARNING] Failed to parse URL: {url} - {e}")
         return True  # Treat unknowns as external for safety
@@ -139,154 +187,336 @@ def is_external_link(url: str) -> bool:
 
 def detect_paywall_for_url(url: str, html_content: str = None) -> bool:
     """
-    Enhanced paywall detection with expanded domain coverage and improved patterns
+    Enhanced paywall detection with multiple approaches:
+    1. Domain lists (fast)
+    2. URL patterns (fast)
+    3. Structured data analysis (JSON-LD)
+    4. Content analysis (heuristic)
+    5. Visual barrier detection
     """
-    
-    # First try domain-based detection (fast and reliable)
+
+    # Use enhanced detection if available
+    if ENHANCED_PAYWALL_AVAILABLE:
+        try:
+            detector = create_enhanced_detector()
+            # Use async wrapper in sync context
+            import asyncio
+
+            try:
+                loop = asyncio.get_event_loop()
+            except RuntimeError:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+
+            result = loop.run_until_complete(detector.detect_paywall(url, html_content))
+
+            if result["is_paywall"]:
+                methods = ", ".join(result["detection_methods"])
+                reasons = "; ".join(result["reasons"])
+                print(
+                    f"🔒 Enhanced paywall detected for {url}: {reasons} (Methods: {methods}, Confidence: {result['confidence']:.2f})"
+                )
+                return True
+            else:
+                print(
+                    f"✅ Enhanced check: No paywall detected for {url} (Confidence: {result['confidence']:.2f})"
+                )
+                return False
+
+        except Exception as e:
+            print(
+                f"⚠️ Enhanced paywall detection failed for {url}: {e}, falling back to basic detection"
+            )
+
+    # Fallback to original detection logic
     try:
         from urllib.parse import urlparse
-        
+
         # Enhanced paywall domains - significantly expanded for better coverage
         PAYWALL_DOMAINS = {
             # Original major sites
-            'wsj.com', 'ft.com', 'nytimes.com', 'bloomberg.com', 'economist.com',
-            'washingtonpost.com', 'newyorker.com', 'theatlantic.com', 'jstor.org',
-            'nature.com', 'science.org', 'springer.com', 'wiley.com', 'elsevier.com',
-            
+            "wsj.com",
+            "ft.com",
+            "nytimes.com",
+            "bloomberg.com",
+            "economist.com",
+            "washingtonpost.com",
+            "newyorker.com",
+            "theatlantic.com",
+            "jstor.org",
+            "nature.com",
+            "science.org",
+            "springer.com",
+            "wiley.com",
+            "elsevier.com",
             # Additional news and magazine sites
-            'spectator.co.uk', 'foreignaffairs.com', 'harpers.org', 'newstatesman.com',
-            'thetimes.co.uk', 'telegraph.co.uk', 'vanityfair.com', 'wired.com',
-            'medium.com', 'substack.com', 'politico.com', 'axios.com', 'forbes.com',
-            'businessinsider.com', 'fortune.com', 'scientificamerican.com',
-            'nationalgeographic.com', 'slate.com', 'salon.com', 'vox.com',
-            
+            "spectator.co.uk",
+            "foreignaffairs.com",
+            "harpers.org",
+            "newstatesman.com",
+            "thetimes.co.uk",
+            "telegraph.co.uk",
+            "vanityfair.com",
+            "wired.com",
+            "medium.com",
+            "substack.com",
+            "politico.com",
+            "axios.com",
+            "forbes.com",
+            "businessinsider.com",
+            "fortune.com",
+            "scientificamerican.com",
+            "nationalgeographic.com",
+            "slate.com",
+            "salon.com",
+            "vox.com",
             # Academic and professional sites
-            'ieee.org', 'acm.org', 'cambridge.org', 'oxford.org', 'tandfonline.com',
-            'sagepub.com', 'jama.jamanetwork.com', 'nejm.org', 'bmj.com',
-            'thelancet.com', 'cell.com', 'sciencedirect.com',
-            
+            "ieee.org",
+            "acm.org",
+            "cambridge.org",
+            "oxford.org",
+            "tandfonline.com",
+            "sagepub.com",
+            "jama.jamanetwork.com",
+            "nejm.org",
+            "bmj.com",
+            "thelancet.com",
+            "cell.com",
+            "sciencedirect.com",
             # Trade and tech publications
-            'techcrunch.com', 'venturebeat.com', 'recode.net', 'theverge.com',
-            'arstechnica.com', 'engadget.com', 'gizmodo.com', 'mashable.com',
-            'readwrite.com', 'gigaom.com', 'allthingsd.com', 'pandodaily.com',
-            
+            "techcrunch.com",
+            "venturebeat.com",
+            "recode.net",
+            "theverge.com",
+            "arstechnica.com",
+            "engadget.com",
+            "gizmodo.com",
+            "mashable.com",
+            "readwrite.com",
+            "gigaom.com",
+            "allthingsd.com",
+            "pandodaily.com",
             # Financial publications
-            'marketwatch.com', 'investopedia.com', 'morningstar.com',
-            'fool.com', 'seekingalpha.com', 'zacks.com', 'thestreet.com',
-            'reuters.com', 'cnbc.com', 'barrons.com',
-            
+            "marketwatch.com",
+            "investopedia.com",
+            "morningstar.com",
+            "fool.com",
+            "seekingalpha.com",
+            "zacks.com",
+            "thestreet.com",
+            "reuters.com",
+            "cnbc.com",
+            "barrons.com",
             # International publications
-            'guardian.co.uk', 'independent.co.uk', 'dailymail.co.uk',
-            'mirror.co.uk', 'express.co.uk', 'thesun.co.uk', 'standard.co.uk',
-            'eveningstandard.co.uk', 'metro.co.uk', 'cityam.com',
-            
+            "guardian.co.uk",
+            "independent.co.uk",
+            "dailymail.co.uk",
+            "mirror.co.uk",
+            "express.co.uk",
+            "thesun.co.uk",
+            "standard.co.uk",
+            "eveningstandard.co.uk",
+            "metro.co.uk",
+            "cityam.com",
             # Lifestyle and entertainment
-            'gq.com', 'vogue.com', 'elle.com', 'marieclaire.com',
-            'cosmopolitan.com', 'harpersbazaar.com', 'esquire.com',
-            'rollingstone.com', 'people.com', 'time.com', 'newsweek.com',
-            'usnews.com', 'usatoday.com', 'latimes.com', 'chicagotribune.com',
-            
+            "gq.com",
+            "vogue.com",
+            "elle.com",
+            "marieclaire.com",
+            "cosmopolitan.com",
+            "harpersbazaar.com",
+            "esquire.com",
+            "rollingstone.com",
+            "people.com",
+            "time.com",
+            "newsweek.com",
+            "usnews.com",
+            "usatoday.com",
+            "latimes.com",
+            "chicagotribune.com",
             # Sports and entertainment
-            'espn.com', 'si.com', 'bleacherreport.com', 'nfl.com',
-            'nba.com', 'mlb.com', 'nhl.com', 'variety.com',
-            'hollywoodreporter.com', 'deadline.com', 'entertainment.com',
-            
+            "espn.com",
+            "si.com",
+            "bleacherreport.com",
+            "nfl.com",
+            "nba.com",
+            "mlb.com",
+            "nhl.com",
+            "variety.com",
+            "hollywoodreporter.com",
+            "deadline.com",
+            "entertainment.com",
             # Subscription platforms
-            'patreon.com', 'memberful.com', 'gumroad.com',
-            'teachable.com', 'thinkific.com', 'kajabi.com', 'podia.com',
-            
+            "patreon.com",
+            "memberful.com",
+            "gumroad.com",
+            "teachable.com",
+            "thinkific.com",
+            "kajabi.com",
+            "podia.com",
             # Learning platforms
-            'coursera.org', 'udemy.com', 'skillshare.com', 'masterclass.com',
-            'pluralsight.com', 'lynda.com', 'codecademy.com', 'treehouse.com',
-            'edx.org', 'brilliant.org', 'datacamp.com'
+            "coursera.org",
+            "udemy.com",
+            "skillshare.com",
+            "masterclass.com",
+            "pluralsight.com",
+            "lynda.com",
+            "codecademy.com",
+            "treehouse.com",
+            "edx.org",
+            "brilliant.org",
+            "datacamp.com",
         }
-        
+
         # Enhanced URL patterns that indicate paywall/subscription content
+        # These patterns are designed to be more specific to avoid false positives
         PAYWALL_PATTERNS = [
-            '/subscribe', '/subscription', '/premium', '/member', '/membership',
-            '/paywall', '/paid', '/pro', '/plus', '/upgrade', '/billing',
-            '/checkout', '/payment', '/purchase', '/buy', '/pricing',
-            '/plans', '/tiers', '/unlock', '/access', '/exclusive',
-            '/vip', '/elite', '/gold', '/platinum', '/diamond',
-            '/signin', '/login', '/register', '/signup', '/join',
-            '/trial', '/demo', '/preview', '/teaser', '/excerpt'
+            "/subscribe",
+            "/subscription",
+            "/premium",
+            "/member",
+            "/membership",
+            "/paywall",
+            "/paid",
+            "/pro/",
+            "/plus",
+            "/upgrade",
+            "/billing",
+            "/checkout",
+            "/payment",
+            "/purchase",
+            "/buy",
+            "/pricing",
+            "/plans",
+            "/tiers",
+            "/unlock",
+            "/access",
+            "/exclusive",
+            "/vip",
+            "/elite",
+            "/gold",
+            "/platinum",
+            "/diamond",
+            "/signin",
+            "/login",
+            "/register",
+            "/signup",
+            "/join",
+            "/trial",
+            "/demo",
+            "/preview",
+            "/teaser",
+            "/excerpt",
+            # More specific patterns to avoid false positives with filenames
+            "?pro=",
+            "&pro=",
+            "/pro?",
+            "/pro&",
+            "/pro#",
+            "plan=pro",
+            "tier=pro",
+            "subscription=pro",
         ]
-        
+
         parsed_url = urlparse(url)
         domain = parsed_url.netloc.lower()
-        
+
         # Remove www. prefix
-        if domain.startswith('www.'):
+        if domain.startswith("www."):
             domain = domain[4:]
-        
+
         # Primary method: Check for exact domain match
         if domain in PAYWALL_DOMAINS:
             print(f"🔒 Paywall detected for {url}: Known paywall domain ({domain})")
             return True
-        
+
         # Check for subdomain matches
         for paywall_domain in PAYWALL_DOMAINS:
             if domain.endswith(paywall_domain):
-                print(f"🔒 Paywall detected for {url}: Subdomain of paywall domain ({paywall_domain})")
+                print(
+                    f"🔒 Paywall detected for {url}: Subdomain of paywall domain ({paywall_domain})"
+                )
                 return True
-        
+
         # Secondary method: URL pattern detection
         url_lower = url.lower()
         for pattern in PAYWALL_PATTERNS:
             if pattern in url_lower:
                 print(f"🔒 Paywall detected for {url}: URL pattern ({pattern})")
                 return True
-        
+
         # If domain-based detection didn't find paywall, it's likely clean
-        print(f"✅ No paywall detected for {url} (enhanced check)")
+        print(f"✅ No paywall detected for {url} (basic check)")
         return False
-        
+
     except Exception as e:
-        print(f"⚠️ Enhanced paywall detection failed for {url}: {e}")
-    
-    # Fallback to original detection method if available and domain check failed
+        print(f"⚠️ Basic paywall detection failed for {url}: {e}")
+
+    # Final fallback to original detection method if available
     if not PAYWALL_DETECTION_AVAILABLE:
         return False
-    
+
     try:
         if html_content:
             # Use HTML content if available
-            result = detect_paywall_from_html(html_content)
+            result = detect_paywall_from_html(html_content, url)
         else:
             # Import and use the full detection method
             from ..paywall.main import classify_page_access
+
             result = classify_page_access(url)
-        
+
         # Check if the result indicates paywall or controlled access
-        status = result.get('status', '').lower()
-        if status in ['paywalled', 'controlled_access']:
+        status = result.get("status", "").lower()
+        if status in ["paywalled", "controlled_access"]:
             print(f"🔒 Paywall detected for {url}: {result.get('reason', 'Unknown')}")
             return True
-        elif status == 'unavailable':
-            print(f"⚠️ Could not check paywall for {url}: {result.get('reason', 'Unknown')}")
+        elif status == "unavailable":
+            print(
+                f"⚠️ Could not check paywall for {url}: {result.get('reason', 'Unknown')}"
+            )
             return False
         else:
             print(f"✅ No paywall detected for {url}")
             return False
-            
+
     except Exception as e:
         print(f"❌ Error detecting paywall for {url}: {e}")
         return False
+
+
+from datetime import datetime
+import pytz
+import requests
+
+
+from datetime import datetime
+import pytz
+import requests
 
 
 def post_scraped_link(
     session_id: int,
     module_id: int,
     url_link: str,
-    risk_category: str = "unknown",
+    risk_category: str = None,
     is_paywall: bool = False,
     content_location: str = None,
     apa7: str = None,
     localurl: str = None,
+    risk_score: float = None,  # ✅ Optional risk score
 ):
+    """Simplified function to post a single scraped link to FastAPI"""
+
+    # Default cleanup
+    risk_category = risk_category or "unknown"
+    content_location = "" if content_location in (None, "Unknown") else content_location
+
+    # Singapore time
     sg = pytz.timezone("Asia/Singapore")
     formattedSGtime = datetime.now(sg)
-    print(formattedSGtime)
+
+    # Build payload
     payload = {
         "module_id": module_id,
         "session_id": session_id,
@@ -298,12 +528,77 @@ def post_scraped_link(
         "apa7": apa7,
         "localurl": localurl,
     }
+
+    if risk_score is not None:
+        payload["risk_score"] = risk_score
+
+    # POST to FastAPI
     try:
         response = requests.post("http://127.0.0.1:8000/scrapedcontents/", json=payload)
         response.raise_for_status()
         print(f"✅ Link stored: {url_link}")
     except Exception as e:
         print(f"❌ Failed to store link: {url_link} — {e}")
+
+
+async def check_link_accessibility(url: str) -> Tuple[str, str]:
+    """
+    Checks if a website is accessible using httpx, with a fallback from HEAD to GET.
+
+    Args:
+        url: The URL to check.
+
+    Returns:
+        A tuple containing:
+        - str: The accessibility status ('accessible', 'failed', 'unknown').
+        - str: A message indicating the status or error.
+    """
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+    }
+
+    try:
+        async with httpx.AsyncClient(verify=False, follow_redirects=True) as client:
+            # 1. Try a HEAD request first (more efficient)
+            try:
+                response = await client.head(url, timeout=10, headers=headers)
+
+                if 200 <= response.status_code < 400:
+                    return "accessible", f"OK (Status: {response.status_code})"
+
+                # For 4xx/5xx errors from HEAD, we'll fall back to GET to be sure.
+                print(
+                    f"⚠️ HEAD request for {url} returned {response.status_code}. Falling back to GET."
+                )
+
+            except (httpx.TimeoutException, httpx.ConnectError, httpx.ReadTimeout):
+                print(
+                    f"⚠️ HEAD request for {url} timed out or failed. Falling back to GET."
+                )
+            except httpx.RequestError as e:
+                print(f"⚠️ HEAD request for {url} failed: {e}. Falling back to GET.")
+
+            # 2. Fallback to GET request if HEAD fails or returns an error
+            try:
+                response = await client.get(url, timeout=15, headers=headers)
+
+                if 200 <= response.status_code < 400:
+                    return "accessible", f"OK (Status: {response.status_code})"
+                else:
+                    return "failed", f"HTTP Error {response.status_code}"
+
+            except httpx.TimeoutException:
+                return "failed", "Request timed out"
+            except httpx.ConnectError:
+                return "failed", "Connection error"
+            except httpx.RequestError as e:
+                # This catches a wide range of other request-related issues
+                error_type = type(e).__name__
+                return "failed", f"Request failed: {error_type}"
+
+    except Exception as e:
+        # Catch-all for unexpected errors
+        return "unknown", f"An unexpected error occurred: {str(e)}"
 
 
 async def handle_login_flow(page: Page):
@@ -414,7 +709,9 @@ from urllib.parse import urlparse, unquote
 from playwright.async_api import Page
 
 
-async def storeTempRepoWithPlaywright(page: Page, url: str, ftype: str, downloaded_files: set) -> str | None:
+async def storeTempRepoWithPlaywright(
+    page: Page, url: str, ftype: str, downloaded_files: set
+) -> str | None:
     if is_possibly_malicious(url, ftype):
         print(f"⚠️ Skipped potentially dangerous file: {url} ({ftype})")
         return None
@@ -433,13 +730,13 @@ async def storeTempRepoWithPlaywright(page: Page, url: str, ftype: str, download
 
             # Remove any potential directory traversal characters
             filename = os.path.basename(raw_name)
-            
+
             # Check if this file has already been downloaded
             file_key = f"{filename}_{ftype}"
             if file_key in downloaded_files:
                 print(f"⏭️ SKIP: {filename} already downloaded")
                 return None
-            
+
             # Add to downloaded files set
             downloaded_files.add(file_key)
 
@@ -457,20 +754,20 @@ async def storeTempRepoWithPlaywright(page: Page, url: str, ftype: str, download
             with open(save_path, "wb") as f:
                 f.write(content)
 
-            print(f"📥 SAVED: {url} → {save_path}")
+            print(f"[SAVED] SAVED: {url} → {save_path}")
             return save_path
 
         except Exception as e:
-            print(f"❌ Failed to download via Playwright: {url} — {e}")
+            print(f"[ERROR] Failed to download via Playwright: {url} — {e}")
             return None
 
 
 async def resolve_final_resource_url(page: Page, url: str) -> str | None:
     """
-    Resolves the actual file or external content URL behind a Moodle mod/resource link.
-    Handles direct pluginfile URLs, downloads, iframe previews, and HTML-based redirects.
+    Resolves the actual file URL behind a Moodle resource link.
+    Attempts Method 2 (network request capture) and Method 1 (download trigger).
+    Returns the final resolved URL or None if unresolved.
     """
-
     file_extensions = [
         ".pdf",
         ".docx",
@@ -482,87 +779,149 @@ async def resolve_final_resource_url(page: Page, url: str) -> str | None:
         ".xlsx",
     ]
 
-    def looks_like_file_url(u: str) -> bool:
-        last_segment = re.split(r"[/?&]", u.split("/")[-1])[-1].lower()
-        return any(last_segment.endswith(ext) for ext in file_extensions)
+    def is_file_request(u: str) -> bool:
+        return any(ext in u.lower() for ext in file_extensions)
 
-    # 🥇 0. Direct file URL (Method 2 first)
-    if looks_like_file_url(url):
-        print("METHOD 2 (FAST) \n")
-        print(f"📄 URL already looks like a file: {url}")
-        return url
+    print(f"\n[INFO] Resolving Moodle resource URL: {url}")
 
-    # 🧼 1. Sanity check for typical Moodle mod/resource links
-    if not re.search(r"/mod/resource/view\.php\?id=\d+", url):
-        print(f"⚠️ Malformed or suspicious resource URL skipped: {url}")
-        return None
-
-    # 🥈 2. Try to detect file request for known extensions
+    # --- Method 2: Capture file-type request from network ---
+    print("[INFO] [Method 2] Checking for direct file requests...")
     try:
         async with page.expect_request(
-            lambda r: any(ext in r.url.lower() for ext in file_extensions),
-            timeout=8000,
+            lambda r: is_file_request(r.url), timeout=8000
         ) as req_info:
             try:
                 await page.goto(url, wait_until="commit")
-            except Exception as e:
-                print(f"⚠️ Navigation error (request-level): {e}")
+            except:
+                print(
+                    "[DEBUG] Navigation did not fully complete — possibly redirected to a file."
+                )
         request = await req_info.value
-        print("METHOD 2 \n")
-        print(f"🔗 File request captured: {request.url}")
+        print("[RESOLVED] Method 2 successful: File request captured")
+        print(f"[RESOLVED] Final URL: {request.url}")
         return request.url
-    except Exception as e:
-        print(f"🕵️ No direct file request captured: {e}")
+    except:
+        print("[DEBUG] No direct file request observed during Method 2.")
 
-    # 🥉 3. Fallback: Try to capture a file download (Method 1)
+    # --- Method 1: Detect triggered download ---
+    print("[INFO] [Method 1] Checking for download behavior...")
     try:
         async with page.expect_download(timeout=10000) as download_info:
             try:
                 await page.goto(url, wait_until="commit")
-            except Exception as e:
-                print(f"⚠️ Navigation interrupted (likely due to download): {e}")
+            except:
+                print(
+                    "[DEBUG] Navigation was interrupted — download may have triggered."
+                )
         download = await download_info.value
-        print("METHOD 1 \n")
-        print(f"📥 Detected file download: {download.url}")
+        print("[RESOLVED] Method 1 successful: File download detected")
+        print(f"[RESOLVED] Final URL: {download.url}")
         return download.url
-    except Exception as e:
-        print(f"🕵️ No file download captured: {e}")
+    except:
+        print("[DEBUG] No download behavior detected during Method 1.")
 
-    # 🏁 4. Fallback: Check for iframe or redirect-based HTML structures
-    try:
-        await page.goto(url, wait_until="domcontentloaded")
-
-        for frame in page.frames:
-            if frame.url != page.url:
-                print("METHOD 3 \n")
-                print(f"🖼️ Iframe found: {frame.url}")
-                return frame.url
-
-        html = await page.content()
-
-        match_meta = re.search(
-            r'<meta http-equiv=["\']refresh["\'] content=["\']\d+;url=([^"\']+)',
-            html,
-            re.IGNORECASE,
-        )
-        if match_meta:
-            redirect_url = match_meta.group(1)
-            print("METHOD 3 \n")
-            print(f"🔁 Meta refresh detected: {redirect_url}")
-            return redirect_url
-
-        match_js = re.search(r'window\.location\s*=\s*["\']([^"\']+)', html)
-        if match_js:
-            redirect_url = match_js.group(1)
-            print("METHOD 3 \n")
-            print(f"🔁 JS redirect detected: {redirect_url}")
-            return redirect_url
-
-    except Exception as e:
-        print(f"❌ Fallback parsing failed: {e}")
-
-    print("🚫 No file, iframe, or redirect target found.")
+    print("[INFO] No file URL could be resolved from this resource.")
     return None
+
+
+# async def resolve_final_resource_url(page: Page, url: str) -> str | None:
+#     """
+#     Resolves the actual file or external content URL behind a Moodle mod/resource link.
+#     Handles direct pluginfile URLs, downloads, iframe previews, and HTML-based redirects.
+#     """
+
+#     file_extensions = [
+#         ".pdf",
+#         ".docx",
+#         ".pptx",
+#         ".zip",
+#         ".doc",
+#         ".ppt",
+#         ".xls",
+#         ".xlsx",
+#     ]
+
+#     def looks_like_file_url(u: str) -> bool:
+#         last_segment = re.split(r"[/?&]", u.split("/")[-1])[-1].lower()
+#         return any(last_segment.endswith(ext) for ext in file_extensions)
+
+#     # 🥇 0. Direct file URL (Method 2 first)
+#     if looks_like_file_url(url):
+#         print("METHOD 2 (FAST) \n")
+#         print(f"📄 URL already looks like a file: {url}")
+#         return url
+
+#     # 🧼 1. Sanity check for typical Moodle mod/resource links
+#     if not re.search(r"/mod/resource/view\.php\?id=\d+", url):
+#         print(f"⚠️ Malformed or suspicious resource URL skipped: {url}")
+#         return None
+
+#     # 🥈 2. Try to detect file request for known extensions
+#     try:
+#         async with page.expect_request(
+#             lambda r: any(ext in r.url.lower() for ext in file_extensions),
+#             timeout=8000,
+#         ) as req_info:
+#             try:
+#                 await page.goto(url, wait_until="commit")
+#             except Exception as e:
+#                 print(f"⚠️ Navigation error (request-level): {e}")
+#         request = await req_info.value
+#         print("METHOD 2 \n")
+#         print(f"🔗 File request captured: {request.url}")
+#         return request.url
+#     except Exception as e:
+#         print(f"🕵️ No direct file request captured: {e}")
+
+#     # 🥉 3. Fallback: Try to capture a file download (Method 1)
+#     try:
+#         async with page.expect_download(timeout=10000) as download_info:
+#             try:
+#                 await page.goto(url, wait_until="commit")
+#             except Exception as e:
+#                 print(f"⚠️ Navigation interrupted (likely due to download): {e}")
+#         download = await download_info.value
+#         print("METHOD 1 \n")
+#         print(f"📥 Detected file download: {download.url}")
+#         return download.url
+#     except Exception as e:
+#         print(f"🕵️ No file download captured: {e}")
+
+#     # 🏁 4. Fallback: Check for iframe or redirect-based HTML structures
+#     try:
+#         await page.goto(url, wait_until="domcontentloaded")
+
+#         for frame in page.frames:
+#             if frame.url != page.url:
+#                 print("METHOD 3 \n")
+#                 print(f"🖼️ Iframe found: {frame.url}")
+#                 return frame.url
+
+#         html = await page.content()
+
+#         match_meta = re.search(
+#             r'<meta http-equiv=["\']refresh["\'] content=["\']\d+;url=([^"\']+)',
+#             html,
+#             re.IGNORECASE,
+#         )
+#         if match_meta:
+#             redirect_url = match_meta.group(1)
+#             print("METHOD 3 \n")
+#             print(f"🔁 Meta refresh detected: {redirect_url}")
+#             return redirect_url
+
+#         match_js = re.search(r'window\.location\s*=\s*["\']([^"\']+)', html)
+#         if match_js:
+#             redirect_url = match_js.group(1)
+#             print("METHOD 3 \n")
+#             print(f"🔁 JS redirect detected: {redirect_url}")
+#             return redirect_url
+
+#     except Exception as e:
+#         print(f"❌ Fallback parsing failed: {e}")
+
+#     print("🚫 No file, iframe, or redirect target found.")
+#     return None
 
 
 EXCLUDED_FULL_URL_KEYWORDS = [
@@ -576,146 +935,242 @@ EXCLUDED_FULL_URL_KEYWORDS = [
 ]
 
 
-from urllib.parse import unquote
+from urllib.parse import urlparse, unquote
 
 
 def is_blocked_url(url: str) -> bool:
     decoded_url = unquote(url.lower())
+
+    # [BLOCKED] Microsoft Teams
     if "teams.microsoft.com" in decoded_url:
         print(f"[BLOCKED LINKS] Skipped teams link: {url}")
         return True
+
+    # [BLOCKED] TinyMCE Powered-by banner
+    parsed = urlparse(decoded_url)
+    if parsed.netloc.endswith("tiny.cloud") and parsed.path.startswith(
+        "/powered-by-tiny"
+    ):
+        print(f"[BLOCKED LINKS] Skipped TinyMCE tracking link: {url}")
+        return True
+
+    # [BLOCKED] Other configured keywords
     return any(keyword in decoded_url for keyword in EXCLUDED_FULL_URL_KEYWORDS)
 
 
-async def extract_links(page: Page, base_url: str, session_id: int, module_id: int, downloaded_files: set):
-    await page.wait_for_selector("#page-content")
-    anchors = await page.query_selector_all("#page-content a")
+def is_valid_url(url: str) -> bool:
+    """
+    Performs comprehensive validation on a URL to filter out malformed,
+    unwanted, or injected links before they are processed.
+    """
+    if not url or not url.strip():
+        return False
+
+    url = url.strip()
+
+    # 1. Reject trivial and malformed links
+    if url == "#" or url.startswith("javascript:") or url.startswith("mailto:"):
+        return False
+    if url in ("http://", "https://"):
+        print(f"🗑️ REJECTED (empty protocol): {url}")
+        return False
+
+    # 2. Reject URLs containing characters that indicate parsing errors (like from citations)
+    if "(" in url or ")" in url:
+        print(f"🗑️ REJECTED (contains parentheses, likely citation artifact): {url}")
+        return False
+
+    # 3. Reject known injected URLs from browser extensions or other scripts
+    try:
+        parsed_url = urlparse(url)
+        if parsed_url.hostname and "copilot.microsoft.com" in parsed_url.hostname:
+            print(f"🗑️ REJECTED (injected by extension): {url}")
+            return False
+    except Exception:
+        # If parsing fails, it's a bad URL
+        print(f"🗑️ REJECTED (URL parsing failed): {url}")
+        return False
+
+    return True
+
+
+async def extract_links(
+    page: Page, base_url: str, session_id: int, module_id: int, downloaded_files: set
+):
+    await page.wait_for_selector("#region-main-box")
+    anchors = await page.query_selector_all("#region-main-box a")
 
     links_to_crawl_further = []
     external_links = []
     collected_links = []
+    seen_lms_links = set()
+
+    print(f"\n[INFO] Starting extraction from: {base_url}")
 
     for anchor in anchors:
         try:
             if await anchor.get_attribute("data-region") == "post-action":
                 continue
+
             href = await anchor.get_attribute("href")
-            original_url = await anchor.get_attribute("data-original-url")
-
-            if not href or href.startswith("#"):
+            if not href or href.startswith("#") or href.startswith("/localrepo/"):
                 continue
-
-            # Ignore local mirrors completely
-            if href.startswith("/localrepo/"):
-                continue
-
-            # Use original URL if available, else fall back to href
-            scan_url = urljoin(base_url, original_url if original_url else href)
 
             class_attr = await anchor.get_attribute("class") or ""
             if "btn" in class_attr:
-                continue  # Skip navigation buttons
+                continue
 
-            collected_links.append(scan_url)
+            scan_url = urljoin(base_url, href)
+            collected_links.append({"url": scan_url})
 
-        except:
+        except Exception:
             continue
 
-    for full_url in collected_links:
-        # Check if it's an external link first (this applies to all link types)
-        # check if initial url already has login in its name
+    for link_data in collected_links:
+        full_url = link_data["url"]
+
+        if not is_valid_url(full_url):
+            continue
+        if full_url in seen_lms_links:
+            continue
+        seen_lms_links.add(full_url)
+
+        # Provide minimal safe context to avoid crash
+        link_data_safe = {
+            "url": full_url,
+            "text": "N/A",
+            "section": "Unknown Section",
+            "page_title": "Unknown Page",
+            "page_url": base_url,
+        }
+
         if is_blocked_url(full_url):
-            print(f"[BLOCKED LINKS] Blocked due to pattern match: {full_url}")
+            print(f"[BLOCKED] Skipped due to known pattern: {full_url}")
             continue
-        if is_external_link(full_url):
-            print("EXTERNAL URL DETECTED")
 
-            # Detect paywall for external links
+        if is_external_link(full_url):
+            print(f"[EXTERNAL] {full_url}")
+            status, reason = await check_link_accessibility(full_url)
+            print(f"    Accessibility: {status} | Paywall: checking...")
+
             is_paywall = detect_paywall_for_url(full_url)
-            
+            print(f"[DEBUG] Paywall result: {'Yes' if is_paywall else 'No'}")
+
+            risk_score = -1 if is_paywall else None
+            risk_category = "PAYWALL" if is_paywall else None
             external_links.append(full_url)
-            post_scraped_link(session_id, module_id, full_url, is_paywall=is_paywall)
+
+            post_scraped_link(
+                session_id=session_id,
+                module_id=module_id,
+                url_link=full_url,
+                is_paywall=is_paywall,
+                content_location=base_url,
+                risk_score=risk_score,
+                risk_category=risk_category,
+            )
             continue
 
         if "mod/resource/view.php" in full_url:
             try:
                 resolved_url = await resolve_final_resource_url(page, full_url)
-                if is_blocked_url(resolved_url):
-                    print(f"🚫 Skipping resolved blocked URL: {resolved_url}")
-                    continue
-
-                print(f"📎 Found file: {resolved_url} — from {full_url}")
                 if not resolved_url:
                     continue
-
-                # Check if resolved URL is external
-                if is_external_link(resolved_url):
-                    print(
-                        "EXTERNAL FILE URL DETECTED AFTER RESOLVING INTERNAL MIDDLEWARE"
-                    )
-                    
-                    # Detect paywall for external resolved URLs
-                    is_paywall = detect_paywall_for_url(resolved_url)
-                    
-                    external_links.append(resolved_url)
-                    post_scraped_link(session_id, module_id, resolved_url, is_paywall=is_paywall)
+                if is_blocked_url(resolved_url):
+                    print(f"[BLOCKED] Resolved URL blocked: {resolved_url}")
                     continue
 
-                # Apply exclusion rules only to internal URLs
+                print(f"[RESOLVED FILE] {resolved_url} (via: {full_url})")
+
+                if is_external_link(resolved_url):
+                    print(f"[EXTERNAL] Resolved external file URL")
+                    status, reason = await check_link_accessibility(resolved_url)
+                    is_paywall = detect_paywall_for_url(resolved_url)
+                    print(f"[DEBUG] Paywall result: {'Yes' if is_paywall else 'No'}")
+
+                    risk_score = -1 if is_paywall else None
+                    risk_category = "PAYWALL" if is_paywall else None
+                    external_links.append(resolved_url)
+
+                    post_scraped_link(
+                        session_id=session_id,
+                        module_id=module_id,
+                        url_link=resolved_url,
+                        is_paywall=is_paywall,
+                        risk_score=risk_score,
+                        risk_category=risk_category,
+                        content_location=base_url,
+                    )
+                    continue
+
                 if should_exclude_url(resolved_url):
-                    print(f"🚫 Skipping excluded internal URL: {resolved_url}")
+                    print(f"[SKIPPED] Internal URL excluded: {resolved_url}")
                     continue
 
                 mime_type = await get_content_type_with_playwright(
                     page.context, resolved_url
                 )
-                print(f"📎 File Type: {mime_type}")
+                print(f"[INFO] MIME type: {mime_type} — {resolved_url}")
 
                 if mime_type.startswith("text/html"):
                     links_to_crawl_further.append(resolved_url)
                 else:
                     if not is_possibly_malicious(resolved_url, mime_type):
-                        await storeTempRepoWithPlaywright(page, resolved_url, mime_type, downloaded_files)
-                        print("📥 Internal file saved for processing")
+                        await storeTempRepoWithPlaywright(
+                            page, resolved_url, mime_type, downloaded_files
+                        )
 
-                continue
             except Exception as e:
-                print(f"❌ Failed to resolve file: {e}")
-                continue
+                print(f"[ERROR] Failed to resolve file: {e}")
+            continue
 
-        # For non-resource internal URLs, apply exclusion rules
         if should_exclude_url(full_url):
-            print(f"🚫 Skipping excluded internal URL: {full_url}")
+            print(f"[SKIPPED] Internal URL excluded: {full_url}")
             continue
 
         mime_type = await get_content_type_with_playwright(page.context, full_url)
+        print(f"[INTERNAL] {mime_type} — {full_url}")
 
         if not is_possibly_malicious(full_url, mime_type):
-            await storeTempRepoWithPlaywright(page, full_url, mime_type, downloaded_files)
-
-        print(f"INTERNAL URL: {mime_type} — {full_url}")
+            await storeTempRepoWithPlaywright(
+                page, full_url, mime_type, downloaded_files
+            )
+            print(f"[SAVED] Internal file stored: {full_url}")
 
         if mime_type.startswith("text/html"):
-            # Skip problematic external Murdoch domains that we can't access
-            if "moodleprod.murdoch.edu.au" in full_url and "10.51.33.25" not in full_url:
-                print(f"🚫 Skipping external Murdoch domain (access issues): {full_url}")
+            if (
+                "moodleprod.murdoch.edu.au" in full_url
+                and "10.51.33.25" not in full_url
+            ):
+                print(f"[SKIPPED] External Murdoch domain inaccessible: {full_url}")
             else:
                 links_to_crawl_further.append(full_url)
-        else:
-            print("📥 Internal file saved for processing")
 
-    print(f"[INTERNAL LINKS] Found {len(links_to_crawl_further)} at: {base_url}")
-    print(f"[EXTERNAL LINKS] Found {len(external_links)} at: {base_url}")
+    print("\n[SUMMARY] Link extraction complete.")
+    print(f"   - Internal HTML pages queued for crawl: {len(links_to_crawl_further)}")
+    print(f"   - External links found: {len(external_links)}")
+    print(f"   - Source page: {base_url}\n")
+
     return links_to_crawl_further
 
 
-async def crawl_page(page: Page, url: str, session_id: int, module_id: int, downloaded_files: set):
+async def crawl_page(
+    page: Page, url: str, session_id: int, module_id: int, downloaded_files: set
+):
     print(f"🌐 Visiting: {url}")
     try:
         await page.goto(url, wait_until="load")
     except:
         print(f"⚠️ Failed to load: {url}")
         return []
+    await page.evaluate(
+        """
+        const script = document.getElementById('lmsguardian-link-rewriter');
+        if (script) {
+            script.remove();
+        }
+    """
+    )
 
     if "login" in page.url or "Continue" in await page.content():
         await handle_login_flow(page)
@@ -724,10 +1179,10 @@ async def crawl_page(page: Page, url: str, session_id: int, module_id: int, down
     meta_tags = await page.query_selector_all("meta[content]")
     for tag in meta_tags:
         content_val = await tag.get_attribute("content")
-        print(f"✅ Meta content value: {content_val}")
+        # print(f"✅ Meta content value: {content_val}")
 
     title = await page.title()
-    print(f"📄 Page title: {title}")
+    # print(f"📄 Page title: {title}")
 
     # ⛏ Try to extract Moodle's internal course ID
     course_id = await page.evaluate(
@@ -740,16 +1195,19 @@ async def crawl_page(page: Page, url: str, session_id: int, module_id: int, down
     )
 
     if course_id is None or course_id != module_id + 1:
-        print(f"🚫 No M.cfg.courseId found — treating as external link.")
+        print(f"No M.cfg.courseId found — treating as external link.")
         return []
 
-    print(f"🎯 Course ID (from M.cfg): {course_id}")
+    print(f"Course ID (from M.cfg): {course_id}")
 
     await expand_internal_toggles(page)
     return await extract_links(page, url, session_id, module_id, downloaded_files)
 
 
 async def run_crawler(starting_page: str, session_id: int, module_id: int):
+    # Reset occurrence tracking for this scan
+    reset_occurrence_tracking()
+
     if DEBUG_MODE:
         print(
             f"🔧 Browser Config: Headless={HEADLESS_BROWSER}, Timeout={BROWSER_TIMEOUT}ms, Delay={CRAWLER_DELAY_SECONDS}s"
@@ -757,7 +1215,8 @@ async def run_crawler(starting_page: str, session_id: int, module_id: int):
 
     async with async_playwright() as playwright:
         browser = await playwright.chromium.launch(headless=HEADLESS_BROWSER)
-        context = await browser.new_context()
+        # Create a context that ignores HTTPS errors for greater tolerance
+        context = await browser.new_context(ignore_https_errors=True)
         context.set_default_timeout(BROWSER_TIMEOUT)
         page = await context.new_page()
 
@@ -777,7 +1236,9 @@ async def run_crawler(starting_page: str, session_id: int, module_id: int):
             pages_already_seen.add(clean_page_url)
             print(f"[CHECK] {current_page}")
 
-            found_links = await crawl_page(page, current_page, session_id, module_id, downloaded_files)
+            found_links = await crawl_page(
+                page, current_page, session_id, module_id, downloaded_files
+            )
             pages_visited.append(current_page)
 
             for link in found_links:
@@ -790,17 +1251,51 @@ async def run_crawler(starting_page: str, session_id: int, module_id: int):
 
             await asyncio.sleep(CRAWLER_DELAY_SECONDS)
 
-        # Second loop for scanned file links
+        # Second loop for scanned file links from documents
         downloaded_links = downloadFilesAndCheck()
-        unique_links = list(set(downloaded_links))
 
-        # Post only valid, external links after crawling them
-        for link in unique_links:
-            if is_external_link(link):
-                print(f"[FROM DOCUMENT] External link detected → posting: {link}")
-                post_scraped_link(session_id, module_id, link)
+        # ✅ Only process unique links from documents (deduplicated after normalization)
+        seen_links = set()
+
+        print(f"📄 Processing {len(downloaded_links)} document links (deduplicated)")
+        for link in downloaded_links:
+            normalized = normalize_url(link)
+
+            if not is_valid_url(normalized):
+                continue
+
+            if is_external_link(normalized):
+                if normalized in seen_links:
+                    print(f"[DUPLICATE SKIPPED] Already processed: {normalized}")
+                    continue
+                seen_links.add(normalized)
+
+                print(f"[FROM DOCUMENT] External link detected → posting: {normalized}")
+                track_link_occurrence(
+                    normalized,
+                    "Document Content",
+                    "Extracted from PDF/document",
+                    "Document link",
+                    "Document scan",
+                )
+
+                status, reason = await check_link_accessibility(normalized)
+                is_paywall = detect_paywall_for_url(normalized)
+
+                risk_score = -1 if is_paywall else None
+                risk_category = "PAYWALL" if is_paywall else None
+
+                post_scraped_link(
+                    session_id,
+                    module_id,
+                    normalized,
+                    is_paywall=is_paywall,
+                    risk_score=risk_score,
+                    risk_category=risk_category,
+                    content_location="Document Scan",
+                )
             else:
-                print(f"[SKIP] Internal or Murdoch-owned link → ignored: {link}")
+                print(f"[SKIP] Internal or Murdoch-owned link → ignored: {normalized}")
 
         await browser.close()
 

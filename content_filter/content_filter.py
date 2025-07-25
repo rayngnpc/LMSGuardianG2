@@ -241,6 +241,27 @@ class ContentFilter:
 # Global instance
 content_filter = ContentFilter()
 
+# Standalone functions for backwards compatibility
+def is_pornography_url(url: str, title: str = "", content: str = "", risk_category: str = "") -> Tuple[bool, str]:
+    """Standalone function for pornography detection"""
+    return content_filter.is_pornography_url(url, title, content, risk_category)
+
+def is_malicious_url(url: str, title: str = "", content: str = "", risk_category: str = "") -> Tuple[bool, str]:
+    """Standalone function for malicious content detection"""
+    return content_filter.is_malicious_url(url, title, content, risk_category)
+
+def is_paywall_url(url: str, title: str = "", content: str = "") -> Tuple[bool, str]:
+    """Standalone function for paywall detection"""
+    return content_filter.is_paywall_url(url, title, content)
+
+def should_exclude_from_apa_citation(url: str, title: str = "", content: str = "", is_paywall: bool = False, risk_category: str = "") -> Tuple[bool, str]:
+    """Standalone function for APA citation exclusion"""
+    return content_filter.should_exclude_from_apa_citation(url, title, content, is_paywall, risk_category)
+
+def should_exclude_from_local_storage(url: str, title: str = "", content: str = "", is_paywall: bool = False, risk_category: str = "") -> Tuple[bool, str]:
+    """Standalone function for local storage exclusion"""
+    return content_filter.should_exclude_from_local_storage(url, title, content, is_paywall, risk_category)
+
 def test_content_filter():
     """Test the content filter with sample URLs"""
     test_urls = [
@@ -259,7 +280,7 @@ def test_content_filter():
         is_paywall, paywall_reason = content_filter.is_paywall_url(url, title)
         should_exclude, exclude_reason = content_filter.should_exclude_from_local_storage(url, title)
         
-        print(f"\\nURL: {url}")
+        print(f"\nURL: {url}")
         print(f"Title: {title}")
         print(f"Pornography: {is_porn} - {porn_reason}")
         print(f"Paywall: {is_paywall} - {paywall_reason}")

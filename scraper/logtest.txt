@@ -1,0 +1,86 @@
+⚠️ Paywall detection not available - continuing without it
+Running local page downloader...
+
+📦 MODULE 1 — 50 links
+
+🔽 Downloading scraped_id=4631: https://www.nea.gov.sg/docs/default-source/dpc/floatsam-2024.pdf
+📄 PDF saved at: localrepo/module_1/20250721_1345/4631/document.pdf
+  ✅ Saved at: localrepo/module_1/20250721_1345/4631
+  ✅ Updated DB for primary 4631
+
+🔽 Downloading scraped_id=4634: https://saturncloud.io/blog/how-to-read-data-from-google-sheets-using-colaboratory-google/
+🌐 HTML saved at: localrepo/module_1/20250721_1345/4634/index.html
+  ✅ Saved at: localrepo/module_1/20250721_1345/4634
+  ✅ Updated DB for primary 4634
+
+🔽 Downloading scraped_id=4643: https://kathyschwalbe.files.wordpress.com/2021/08/schwalbe-intro-pm-7e-sample-chapter-1.pdf
+📄 PDF saved at: localrepo/module_1/20250721_1345/4643/document.pdf
+  ✅ Saved at: localrepo/module_1/20250721_1345/4643
+  ✅ Updated DB for primary 4643
+  ↪️  Synced duplicate 4639
+  ↪️  Synced duplicate 4640
+  ↪️  Synced duplicate 4638
+  ↪️  Synced duplicate 4642
+  ↪️  Synced duplicate 4641
+
+🔽 Downloading scraped_id=4685: https://kathyschwalbe.files.wordpress.com/2018/08/project2016guide.pdf
+📄 PDF saved at: localrepo/module_1/20250721_1345/4685/document.pdf
+  ✅ Saved at: localrepo/module_1/20250721_1345/4685
+  ✅ Updated DB for primary 4685
+  ↪️  Synced duplicate 4657
+  ↪️  Synced duplicate 4682
+  ↪️  Synced duplicate 4658
+  ↪️  Synced duplicate 4656
+  ↪️  Synced duplicate 4688
+  ↪️  Synced duplicate 4689
+  ↪️  Synced duplicate 4683
+  ↪️  Synced duplicate 4665
+  ↪️  Synced duplicate 4691
+  ↪️  Synced duplicate 4664
+  ↪️  Synced duplicate 4687
+  ↪️  Synced duplicate 4670
+  ↪️  Synced duplicate 4684
+  ↪️  Synced duplicate 4692
+  ↪️  Synced duplicate 4690
+  ↪️  Synced duplicate 4671
+  ↪️  Synced duplicate 4663
+  ↪️  Synced duplicate 4669
+  ↪️  Synced duplicate 4686
+  ↪️  Synced duplicate 4672
+
+🔽 Downloading scraped_id=4666: http://en.wikipedia.org/wiki/Stakeholder_management
+🌐 HTML saved at: localrepo/module_1/20250721_1345/4666/index.html
+  ✅ Saved at: localrepo/module_1/20250721_1345/4666
+  ✅ Updated DB for primary 4666
+  ↪️  Synced duplicate 4673
+  ↪️  Synced duplicate 4674
+
+🔽 Downloading scraped_id=4660: http://www.mindtools.com/pages/article/newPPM_07.htm
+❌ HTML save failed: Command '['/usr/bin/single-file', 'http://www.mindtools.com/pages/article/newPPM_07.htm', 'localrepo/module_1/20250721_1345/4660/index.html', '--browser-executable-path', '/usr/bin/google-chrome', '--max-resource-size-enabled', '--max-resource-size', '10']' returned non-zero exit status 130.
+❌ Download failed for scraped_id=4660
+
+🔽 Downloading scraped_id=4630: https://www.xvideos.com
+
+KeyboardInterrupt received — exiting gracefully.
+✅ Session 104 updated to status 'failed'
+✅ LMS Guardian completed!
+Traceback (most recent call last):
+  File "/usr/lib/python3.11/asyncio/runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.11/asyncio/base_events.py", line 653, in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+asyncio.exceptions.CancelledError
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/home/administrator/Test-Chau-LMS/lmstest1/scraper/main.py", line 751, in <module>
+    asyncio.run(main())
+  File "/usr/lib/python3.11/asyncio/runners.py", line 190, in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.11/asyncio/runners.py", line 123, in run
+    raise KeyboardInterrupt()
+KeyboardInterrupt

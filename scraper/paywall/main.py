@@ -88,7 +88,7 @@ class PaywallDetector:
                 return result
             
             # Check content quality
-            content_check = self._check_content_quality(soup, page_metrics)
+            content_check = self._check_content_quality(soup, page_metrics, url)
             if content_check["detected"]:
                 result["status"] = "paywalled"
                 result["reason"] = content_check["reason"]
@@ -208,16 +208,26 @@ class PaywallDetector:
                 return {"detected": True, "reason": f"Paywall keyword detected: '{keyword}'"}
         return {"detected": False, "reason": None}
 
-    def _check_content_quality(self, soup: BeautifulSoup, metrics: Dict) -> Dict:
+    def _check_content_quality(self, soup: BeautifulSoup, metrics: Dict, url: str = "") -> Dict:
         """Analyze content quality to detect paywall truncation"""
         body = soup.body
         if not body:
             return {"detected": True, "reason": "No body content found"}
         
+        # Check if this is a direct file download
+        from urllib.parse import urlparse
+        parsed_url = urlparse(url)
+        file_extensions = ['.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', '.zip', '.rar', '.txt', '.rtf']
+        is_direct_file = any(parsed_url.path.lower().endswith(ext) for ext in file_extensions)
+        
         main_text = body.get_text(separator=" ", strip=True)
         
         if len(main_text) < 200:
-            return {"detected": True, "reason": f"Short content ({len(main_text)} chars) suggests paywall"}
+            if is_direct_file:
+                # Direct file downloads are expected to have minimal HTML content
+                return {"detected": False, "reason": f"Direct file download ({parsed_url.path.split('/')[-1]}) with minimal HTML wrapper"}
+            else:
+                return {"detected": True, "reason": f"Short content ({len(main_text)} chars) suggests paywall"}
         
         if self._has_suspicious_content_patterns(main_text):
             return {"detected": True, "reason": "Content shows signs of truncation"}
@@ -264,7 +274,7 @@ def classify_page_access(url: str) -> Dict[str, str]:
     return detector.detect_paywall(url)
 
 
-def detect_paywall_from_html(html: str) -> Dict[str, str]:
+def detect_paywall_from_html(html: str, url: str = "") -> Dict[str, str]:
     """Detect paywall from existing HTML content"""
     detector = PaywallDetector()
     result = {"status": None, "reason": None, "confidence": "medium"}
@@ -297,12 +307,23 @@ def detect_paywall_from_html(html: str) -> Dict[str, str]:
             result["confidence"] = "medium"
             return result
         
-        # Check content quality
+        # Check content quality (skip for direct file downloads)
+        from urllib.parse import urlparse
+        parsed_url = urlparse(url if url else "")
+        file_extensions = ['.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', '.zip', '.rar', '.txt', '.rtf']
+        is_direct_file = any(parsed_url.path.lower().endswith(ext) for ext in file_extensions)
+        
         main_text = soup.body.get_text(separator=" ", strip=True) if soup.body else ""
-        if len(main_text) < 200:
+        if len(main_text) < 200 and not is_direct_file:
             result["status"] = "paywalled"
             result["reason"] = f"Short content ({len(main_text)} chars) suggests paywall"
             result["confidence"] = "low"
+            return result
+        elif is_direct_file and len(main_text) < 200:
+            # For direct files, short content is expected - not a paywall indicator
+            result["status"] = "clean"
+            result["reason"] = f"Direct file download ({parsed_url.path.split('/')[-1]}) with minimal HTML wrapper"
+            result["confidence"] = "high"
             return result
         
         # Check login requirements

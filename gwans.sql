@@ -1,9 +1,13 @@
--- Drop tables if they already exist (in reverse dependency order)
-DROP TABLE IF EXISTS scraped_contents;
-DROP TABLE IF EXISTS reports;
-DROP TABLE IF EXISTS scraper_sessions;
-DROP TABLE IF EXISTS modules;
-DROP TABLE IF EXISTS unit_coordinators;
+-- Drop views or dependent objects first
+DROP VIEW IF EXISTS citation_statistics CASCADE;
+
+-- Drop tables in reverse dependency order with CASCADE
+DROP TABLE IF EXISTS scraped_contents CASCADE;
+DROP TABLE IF EXISTS reports CASCADE;
+DROP TABLE IF EXISTS scraper_sessions CASCADE;
+DROP TABLE IF EXISTS modules CASCADE;
+DROP TABLE IF EXISTS unit_coordinators CASCADE;
+
 
 -- UnitCoordinator Table
 CREATE TABLE unit_coordinators (
@@ -35,26 +39,15 @@ CREATE TABLE scraper_sessions (
     CONSTRAINT fk_scraper_module FOREIGN KEY (module_id) REFERENCES modules (module_id)
 );
 
--- Report Table
-CREATE TABLE reports (
-    report_id SERIAL PRIMARY KEY,
-    session_id INT NOT NULL,
-    module_id INT NOT NULL,
-    report_type VARCHAR(100),
-    report_content TEXT,
-    CONSTRAINT fk_session FOREIGN KEY (session_id) REFERENCES scraper_sessions (session_id),
-    CONSTRAINT fk_module_report FOREIGN KEY (module_id) REFERENCES modules (module_id)
-);
-
 -- ScrapedContent Table (with risk_score and risk_category)
 CREATE TABLE scraped_contents (
     scraped_id SERIAL PRIMARY KEY,
     module_id INT NOT NULL,
     session_id INT NOT NULL,
     scraped_at TIMESTAMP,
-    localurl TEXT, 
+    localurl TEXT,
     url_link TEXT,
-    risk_score FLOAT,
+    risk_score DOUBLE PRECISION,
     risk_category TEXT,
     content_location TEXT,
     is_paywall BOOLEAN DEFAULT FALSE,
@@ -63,64 +56,71 @@ CREATE TABLE scraped_contents (
     CONSTRAINT fk_session_scraped FOREIGN KEY (session_id) REFERENCES scraper_sessions (session_id)
 );
 
--- Insert Unit Coordinators
-INSERT INTO unit_coordinators (full_name, email)
-VALUES
-    ('Chau Ng', '857@gmail.com'),
-    ('GwanYoung Park', 'pgy6667@gmail.com'),
-    ('Jasmine Berry', 'sheetpweri101@outlook.com'),
-    ('Muhamad Syafiq', 'syafiqwork2023@gmail.com'),
-    ('Admin Account', 'npchau95@gmail.com'),
-    ('Admin User', 'npchau95@gmail.com');
 
--- Insert Modules linked to that UC
-INSERT INTO modules (
-    uc_id,
-    module_name,
-    teaching_period,
-    semester,
-    module_description,
-    unit_code
-)
-VALUES
+-- Insert Unit Coordinators
+INSERT INTO
+    unit_coordinators (full_name, email)
+VALUES ('Chau Ng', 'npchau95@gmail.com'),
     (
-        4,
-        'ICT380 Information Security Policy and Governance',
-        '2024',
-        'TSA',
-        'This unit introduces students to the advanced study of Information Security Policy and Governance at the organisational level. 
-        Students will gain an understanding of standards and policies as well as international, national and local regulatory requirements 
-        governing organisational information technology systems. The unit will address relevant data protection legislation, industry best practices, 
-        risk management techniques and develop the necessary skills to evaluate and measure organisational compliance and to determine appropriate 
-        organisational strategy to best support the information security needs.',
-        1
+        'GwanYoung Park',
+        'pgy6667@gmail.com'
     ),
     (
-        3,
-        'ICT285 Databases',
-        '2024',
+        'Jasmine Berry',
+        'cosmicowl045@gmail.com'
+    ),
+    (
+        'Muhamad Syafiq',
+        'syafiqwork2023@gmail.com'
+    ),
+    (
+        'Admin Account',
+        'npchau95@gmail.com'
+    ),
+    (
+        'Admin User',
+        'npchau95@gmail.com'
+    );
+
+--- Insert Modules linked to that UC in the requested order:
+INSERT INTO
+    modules (
+        module_id,
+        uc_id,
+        module_name,
+        teaching_period,
+        semester,
+        module_description,
+        unit_code
+    )
+VALUES (
+        1,
+        1,
+        'Introduction to ICT Research Methods',
+        '2025',
         'TJA',
-        'This unit focuses on database design, implementation and management. Topics include data modelling, the relational model, non-relational databases,
-         SQL, logical and physical database design, transaction management, recovery, security, and database administration. The theory material is complemented
-         by practical work using common database management systems.',
-        2
+        'This unit provides an introduction to research in the information and communications technology (ICT) discipline. It explores the kinds of research questions addressed in 
+        ICT research, and provides an opportunity for students to understand the broad range of research approaches used in ICT research including: design research, experimental research,
+        survey research, action research and case study research. Students will develop both research and project management skills and gain the knowledge and skills needed to
+        critically evaluate the ICT research literature.',
+        'BSC203'
     ),
     (
         2,
-        'ICT302 IT Professional Practice Project',
+        2,
+        'Information Security Policy and Governance',
         '2025',
         'TMA',
-        'This team-based university unit provides students with the opportunity to solve real-world problems across various domains. Projects will be carefully selected,
-        and groups formed to best leverage the knowledge and skills acquired from each student’s respective major(s). Recognizing the interdisciplinary nature of the project,
-        students will collaborate with team members from different IT majors to solve complex problems effectively. Emphasis will be placed on project management,
-        interdisciplinary teamwork, professional communication with clients and stakeholders, and the delivery of relevant project outcomes. Furthermore, students will have 
-        the opportunity to engage with industry professionals, allowing them to gain insights into IT professional practices. These industry engagement opportunities aim to 
-        support students'' professional development and enhance their readiness for a successful career in the IT industry.',
-        3
+        'This unit introduces students to the advanced study of Information Security Policy and Governance at the organisational level. Students will gain an understanding of 
+        standards and policies as well as international, national and local regulatory requirements governing organisational information technology systems. The unit will address
+        relevant data protection legislation, industry best practices, risk management techniques and develop the necessary skills to evaluate and measure organisational compliance
+        and to determine appropriate organisational strategy to best support the information security needs.',
+        'ICT280'
     ),
     (
-        4,
-        'POL298 International Political Economy',
+        3,
+        3,
+        'International Political Economy',
         '2025',
         'TMA',
         'This unit introduces students to the discipline of international political economy. It is divided into three thematic sections. The first conceptually introduces the 
@@ -130,29 +130,14 @@ VALUES
         by crises. What is the nature of crises, are they linked to key transformations in the IPE considered in the programme, such as the globalisation of production, trade,
         and finance, and the rise of new economically powerful states such as China? Can these crises be resolved through leadership and cooperation between states, or is the
         global political economy characterised by crises of leadership in which opportunities for international cooperation are diminishing?',
-        4
+        'POL298'
     ),
     (
-        1,
-        'ICT280 Information Security Policy and Governance',
+        8,
+        4,
+        'Analysis of Different Type of Links found in Moodle LMS',
         '2025',
         'TMA',
-        'This unit introduces students to the advanced study of Information Security Policy and Governance at the organisational level. Students will gain an understanding of 
-        standards and policies as well as international, national and local regulatory requirements governing organisational information technology systems. The unit will address
-        relevant data protection legislation, industry best practices, risk management techniques and develop the necessary skills to evaluate and measure organisational compliance
-        and to determine appropriate organisational strategy to best support the information security needs.',
-        5
-    ),
-    (
-        1,
-        'ICT302 IT Professional Practice Project',
-        '2025',
-        'TMA',
-        'This team-based university unit provides students with the opportunity to solve real-world problems across various domains. Projects will be carefully selected, and groups
-        formed to best leverage the knowledge and skills acquired from each student respective major(s). Recognizing the interdisciplinary nature of the project, students will
-        collaborate with team members from different IT majors to solve complex problems effectively. Emphasis will be placed on project management, interdisciplinary teamwork, 
-        professional communication with clients and stakeholders, and the delivery of relevant project outcomes. Furthermore, students will have the opportunity to engage with industry
-        professionals, allowing them to gain insights into IT professional practices. These industry engagement opportunities aim to support students'' professional development and 
-        enhance their readiness for a successful career in the IT industry.',
-        6
+        'This course page is built to show that no reports will be sent when there is no external links or third-party referencces.',
+        'ICT567'
     );

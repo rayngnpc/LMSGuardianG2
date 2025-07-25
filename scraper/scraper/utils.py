@@ -68,8 +68,9 @@ IGNORED_INTERNAL_DOMAINS = [
     "www.murdoch.edu.au",
     "library.murdoch.edu.au",
     "mymurdoch.murdoch.edu.au",
+    "murdoch.navexone.com",
+    "rl.talis.com",
 ]
-
 
 def should_exclude_url(url: str) -> bool:
     try:

@@ -1,0 +1,79 @@
+🚀 Starting module-specific report generation...
+
+📊 MODULE LINK SUMMARY:
+   Total links: 69
+   Module 1: 69 links (69 with risk analysis), Highest Risk Score: 85.0
+
+📦 Module 1 (69 risky links):
+  🔗 scraped_id=4633 | score=-1.0 | paywall=True | url=https://www.wsj.com/finance/banking/goldman-sachs-greece-hotel-sell-34b5353a?mod=real-estate_lead_story
+  🔗 scraped_id=4632 | score=0.0 | paywall=True | url=https://www.ft.com/content/2379dfdb-b62b-47de-98d5-dc49be50e661
+  🔗 scraped_id=4628 | score=-55.0 | paywall=False | url=https://coinlab.biz/
+  🔗 scraped_id=4625 | score=-55.0 | paywall=False | url=https://coinlab.biz/
+  🔗 scraped_id=4629 | score=-55.0 | paywall=False | url=https://coinlab.biz/
+  🔗 scraped_id=4646 | score=-1.0 | paywall=False | url=https://student.unsw.edu.au/groupwork
+  🔗 scraped_id=4649 | score=-1.0 | paywall=False | url=https://www.gnu.org/software/pspp/
+  🔗 scraped_id=4655 | score=-1.0 | paywall=False | url=https://www.dlsweb.rmit.edu.au/lsu/content/2_assessmenttasks/assess_pdf/PG%20lit%20review.pdf
+  🔗 scraped_id=4652 | score=-1.0 | paywall=False | url=https://emedia.rmit.edu.au/learninglab/content/writing-literature-review
+  🔗 scraped_id=4637 | score=-1.0 | paywall=False | url=http://www.sfia-online.org
+  🔗 scraped_id=4648 | score=-1.0 | paywall=False | url=https://www.gnu.org/software/pspp/
+  🔗 scraped_id=4645 | score=-1.0 | paywall=False | url=https://student.unsw.edu.au/groupwork
+  🔗 scraped_id=4636 | score=-1.0 | paywall=False | url=http://www.sfia-online.org/
+  🔗 scraped_id=4654 | score=-1.0 | paywall=False | url=https://www.dlsweb.rmit.edu.au/lsu/content/2_assessmenttasks/assess_pdf/PG%20lit%20review.pdf
+  🔗 scraped_id=4650 | score=-1.0 | paywall=False | url=https://www.dlsweb.rmit.edu.au/lsu/content/2_assessmenttasks/assess_pdf/PG%20lit%20review.pdf
+  🔗 scraped_id=4653 | score=-1.0 | paywall=False | url=https://emedia.rmit.edu.au/learninglab/content/writing-literature-review
+  🔗 scraped_id=4644 | score=-1.0 | paywall=False | url=https://student.unsw.edu.au/groupwork
+  🔗 scraped_id=4647 | score=-1.0 | paywall=False | url=https://www.gnu.org/software/pspp/
+  🔗 scraped_id=4651 | score=-1.0 | paywall=False | url=https://emedia.rmit.edu.au/learninglab/content/writing-literature-review
+  🔗 scraped_id=4643 | score=0.0 | paywall=False | url=https://kathyschwalbe.files.wordpress.com/2021/08/schwalbe-intro-pm-7e-sample-chapter-1.pdf
+  🔗 scraped_id=4631 | score=0.0 | paywall=False | url=https://www.nea.gov.sg/docs/default-source/dpc/floatsam-2024.pdf
+  🔗 scraped_id=4634 | score=0.0 | paywall=False | url=https://saturncloud.io/blog/how-to-read-data-from-google-sheets-using-colaboratory-google/
+  🔗 scraped_id=4667 | score=0.0 | paywall=False | url=http://www.gantt.com/index.htm
+  🔗 scraped_id=4639 | score=0.0 | paywall=False | url=https://kathyschwalbe.files.wordpress.com/2021/08/schwalbe-intro-pm-7e-sample-chapter-1.pdf
+  🔗 scraped_id=4685 | score=0.0 | paywall=False | url=https://kathyschwalbe.files.wordpress.com/2018/08/project2016guide.pdf
+  🔗 scraped_id=4658 | score=0.0 | paywall=False | url=https://kathyschwalbe.files.wordpress.com/2018/08/project2016guide.pdf
+  🔗 scraped_id=4679 | score=0.0 | paywall=False | url=http://www.mindtools.com/pages/article/newPPM_07.htm
+  🔗 scraped_id=4682 | score=0.0 | paywall=False | url=https://kathyschwalbe.files.wordpress.com/2018/08/project2016guide.pdf
+  🔗 scraped_id=4678 | score=0.0 | paywall=False | url=http://www.mindtools.com/pages/article/newPPM_07.htm
+  🔗 scraped_id=4693 | score=0.0 | paywall=False | url=https://lingojam.com/FancyTextGenerator
+  🔗 scraped_id=4666 | score=0.0 | paywall=False | url=http://en.wikipedia.org/wiki/Stakeholder_management
+  🔗 scraped_id=4657 | score=0.0 | paywall=False | url=https://kathyschwalbe.files.wordpress.com/2018/08/project2016guide.pdf
+  🔗 scraped_id=4681 | score=0.0 | paywall=False | url=http://www.mindtools.com/pages/article/newPPM_07.htm
+  🔗 scraped_id=4660 | score=0.0 | paywall=False | url=http://www.mindtools.com/pages/article/newPPM_07.htm
+  🔗 scraped_id=4688 | score=0.0 | paywall=False | url=https://kathyschwalbe.files.wordpress.com/2018/08/project2016guide.pdf
+  🔗 scraped_id=4683 | score=0.0 | paywall=False | url=https://kathyschwalbe.files.wordpress.com/2018/08/project2016guide.pdf
+  🔗 scraped_id=4665 | score=0.0 | paywall=False | url=https://kathyschwalbe.files.wordpress.com/2018/08/project2016guide.pdf
+  🔗 scraped_id=4691 | score=0.0 | paywall=False | url=https://kathyschwalbe.files.wordpress.com/2018/08/project2016guide.pdf
+  🔗 scraped_id=4680 | score=0.0 | paywall=False | url=http://www.mindtools.com/pages/article/newPPM_07.htm
+  🔗 scraped_id=4661 | score=0.0 | paywall=False | url=http://www.mindtools.com/pages/article/newPPM_07.htm
+  🔗 scraped_id=4689 | score=0.0 | paywall=False | url=https://kathyschwalbe.files.wordpress.com/2018/08/project2016guide.pdf
+  🔗 scraped_id=4677 | score=0.0 | paywall=False | url=http://www.mindtools.com/pages/article/newPPM_07.htm
+  🔗 scraped_id=4659 | score=0.0 | paywall=False | url=http://www.gantt.com/index.htm
+  🔗 scraped_id=4656 | score=0.0 | paywall=False | url=https://kathyschwalbe.files.wordpress.com/2018/08/project2016guide.pdf
+  🔗 scraped_id=4664 | score=0.0 | paywall=False | url=https://kathyschwalbe.files.wordpress.com/2018/08/project2016guide.pdf
+  🔗 scraped_id=4673 | score=0.0 | paywall=False | url=http://en.wikipedia.org/wiki/Stakeholder_management
+  🔗 scraped_id=4687 | score=0.0 | paywall=False | url=https://kathyschwalbe.files.wordpress.com/2018/08/project2016guide.pdf
+  🔗 scraped_id=4670 | score=0.0 | paywall=False | url=https://kathyschwalbe.files.wordpress.com/2018/08/project2016guide.pdf
+  🔗 scraped_id=4684 | score=0.0 | paywall=False | url=https://kathyschwalbe.files.wordpress.com/2018/08/project2016guide.pdf
+  🔗 scraped_id=4675 | score=0.0 | paywall=False | url=http://www.mindtools.com/pages/article/newPPM_07.htm
+  🔗 scraped_id=4674 | score=0.0 | paywall=False | url=http://en.wikipedia.org/wiki/Stakeholder_management
+  🔗 scraped_id=4669 | score=0.0 | paywall=False | url=https://kathyschwalbe.files.wordpress.com/2018/08/project2016guide.pdf
+  🔗 scraped_id=4692 | score=0.0 | paywall=False | url=https://kathyschwalbe.files.wordpress.com/2018/08/project2016guide.pdf
+  🔗 scraped_id=4676 | score=0.0 | paywall=False | url=http://www.mindtools.com/pages/article/newPPM_07.htm
+  🔗 scraped_id=4642 | score=0.0 | paywall=False | url=https://kathyschwalbe.files.wordpress.com/2021/08/schwalbe-intro-pm-7e-sample-chapter-1.pdf
+  🔗 scraped_id=4638 | score=0.0 | paywall=False | url=https://kathyschwalbe.files.wordpress.com/2021/08/schwalbe-intro-pm-7e-sample-chapter-1.pdf
+  🔗 scraped_id=4662 | score=0.0 | paywall=False | url=http://www.mindtools.com/pages/article/newPPM_07.htm
+  🔗 scraped_id=4641 | score=0.0 | paywall=False | url=https://kathyschwalbe.files.wordpress.com/2021/08/schwalbe-intro-pm-7e-sample-chapter-1.pdf
+  🔗 scraped_id=4663 | score=0.0 | paywall=False | url=https://kathyschwalbe.files.wordpress.com/2018/08/project2016guide.pdf
+  🔗 scraped_id=4690 | score=0.0 | paywall=False | url=https://kathyschwalbe.files.wordpress.com/2018/08/project2016guide.pdf
+  🔗 scraped_id=4640 | score=0.0 | paywall=False | url=https://kathyschwalbe.files.wordpress.com/2021/08/schwalbe-intro-pm-7e-sample-chapter-1.pdf
+  🔗 scraped_id=4686 | score=0.0 | paywall=False | url=https://kathyschwalbe.files.wordpress.com/2018/08/project2016guide.pdf
+  🔗 scraped_id=4668 | score=0.0 | paywall=False | url=http://www.gantt.com/index.htm
+  🔗 scraped_id=4627 | score=0.0 | paywall=False | url=https://rl.talis.com/3/murdoch/lists/62562748-16DF-53E1-D32E-81C662867B97.html?lang=en-GB
+  🔗 scraped_id=4635 | score=0.0 | paywall=False | url=https://docs.python.org/3/
+  🔗 scraped_id=4671 | score=0.0 | paywall=False | url=https://kathyschwalbe.files.wordpress.com/2018/08/project2016guide.pdf
+  🔗 scraped_id=4672 | score=0.0 | paywall=False | url=https://kathyschwalbe.files.wordpress.com/2018/08/project2016guide.pdf
+  🔗 scraped_id=4626 | score=0.0 | paywall=False | url=https://www.tiny.cloud/powered-by-tiny?utm_campaign=poweredby&utm_source=tiny&utm_medium=referral&utm_content=v7
+  🔗 scraped_id=4630 | score=85.0 | paywall=False | url=https://www.xvideos.com
+❌ Failed for module 1: 'NoneType' object is not iterable
+
+✅ All reports processed for 1 modules.
