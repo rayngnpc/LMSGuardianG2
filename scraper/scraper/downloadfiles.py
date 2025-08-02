@@ -11,6 +11,8 @@ import re
 import pptx
 import openpyxl
 import csv
+from urllib.parse import urlparse, urlunparse
+
 
 # ---------- Config ----------
 TO_PROCESS_FURTHER_PATH = "scraper/scraper/toProcessFurther"
@@ -26,8 +28,10 @@ SUPPORTED_EXTENSIONS = {
 }
 
 
-# ---------- Extractors ----------
+# Extractors
 def extract_links_from_docx(filepath):
+    """Extracts hyperlinks and visible URLs from a .docx file."""
+
     links = []
     try:
         doc = Document(filepath)
@@ -46,6 +50,7 @@ def extract_links_from_docx(filepath):
 
 
 def extract_links_from_doc(filepath):
+    """Extracts URLs embedded in VBA macros from a legacy .doc file."""
     links = []
     vba = None
     try:
@@ -64,6 +69,7 @@ def extract_links_from_doc(filepath):
 
 
 def extract_links_from_pdf(filepath):
+    """Extracts links from annotations and visible text in a PDF file."""
     links = []
     try:
         doc = fitz.open(filepath)
@@ -84,6 +90,8 @@ def extract_links_from_pdf(filepath):
 
 
 def extract_links_from_pptx(filepath):
+    """Extracts plain text URLs from a pptx file"""
+
     links = []
     try:
         prs = pptx.Presentation(filepath)
@@ -111,11 +119,31 @@ def extract_links_from_pptx(filepath):
     return links
 
 
-import subprocess
-import re
-
-
 def extract_links_from_ppt(filepath):
+    links = []
+    try:
+        result = subprocess.run(["strings", filepath], capture_output=True, text=True)
+        if result.returncode == 0:
+            for line in result.stdout.splitlines():
+                found_urls = re.findall(r"https?://\S+|www\.\S+", line)
+                for url in found_urls:
+                    cleaned = url.rstrip(".,;)!?\"'")
+                    if "schemas.openxmlformats.org" in cleaned:
+                        continue  # ❌ Skip known false positives
+                    print(f"[PPT] Found: {cleaned}")
+                    links.append(cleaned)
+    except FileNotFoundError:
+        print(
+            "[ERROR] 'strings' command not found. Install with: sudo apt install binutils"
+        )
+    except Exception as e:
+        print(f"[WARNING] Error reading PPT file {filepath}: {e}")
+    return links
+
+
+def extract_links_from_xlsx(filepath):
+    """Extracts visible hyperlinks from cell values in an .xlsx spreadsheet."""
+
     links = []
     try:
         result = subprocess.run(["strings", filepath], capture_output=True, text=True)
@@ -154,6 +182,8 @@ def extract_links_from_xlsx(filepath):
 
 
 def extract_links_from_csv(filepath):
+    """Extracts URLs from each cell in a CSV file."""
+
     links = []
     try:
         with open(filepath, newline="", encoding="utf-8", errors="ignore") as f:
@@ -168,8 +198,9 @@ def extract_links_from_csv(filepath):
     return links
 
 
-# ---------- ZIP Handler ----------
 def extract_zip_recursive(zip_path, parent_display_path, all_links):
+    """Recursively extracts a ZIP file and scans supported files within for links."""
+
     try:
         with tempfile.TemporaryDirectory() as temp_dir:
             with zipfile.ZipFile(zip_path, "r") as z:
@@ -192,6 +223,8 @@ def extract_zip_recursive(zip_path, parent_display_path, all_links):
 
 
 def scan_single_file(filepath):
+    """Choose link extraction based on file extension."""
+
     ext = os.path.splitext(filepath)[1].lower()
     if ext == ".docx":
         return extract_links_from_docx(filepath)
@@ -210,8 +243,9 @@ def scan_single_file(filepath):
     return []
 
 
-# ---------- Folder Scanner ----------
 def scan_folder_for_links(folder_path):
+    """Recursively scans all supported files in a folder and extracts links."""
+
     all_links = {}
 
     def recursive_scan(path):
@@ -235,6 +269,7 @@ def scan_folder_for_links(folder_path):
 
 # ---------- Unzip Initial Files ----------
 def unzipFolders():
+    """Unzips all .zip files in the toProcessFurther folder for further analysis."""
     for filename in os.listdir(TO_PROCESS_FURTHER_PATH):
         if filename.endswith(".zip"):
             zip_path = os.path.join(TO_PROCESS_FURTHER_PATH, filename)
@@ -246,11 +281,9 @@ def unzipFolders():
 
 
 # ---------- ClamAV Scanner ----------
-
-
 def scanWithClamAV():
+    """Runs a ClamAV antivirus scan on the toProcessFurther folder."""
     print("\n[INFO] Running ClamAV scan...")
-
     scan_command = [
         "clamscan",
         "-r",
@@ -258,43 +291,19 @@ def scanWithClamAV():
         "--no-summary",
         TO_PROCESS_FURTHER_PATH,
     ]
-
     try:
         result = subprocess.run(
             scan_command, capture_output=True, text=True, check=False
         )
-
-        output = result.stdout.strip()
-        if not output:
-            print("[INFO] No infected files found.")
-            return
-
-        print("[INFO] Scan complete. Parsing infected files...\n")
-
-        deleted_count = 0
-        for line in output.splitlines():
-            if line.endswith("FOUND"):
-                filepath = line.split(":")[0].strip()
-                try:
-                    os.remove(filepath)
-                    print(f"🗑️ Deleted infected file: {filepath}")
-                    deleted_count += 1
-                except Exception as e:
-                    print(f"❌ Failed to delete {filepath}: {e}")
-
-        if deleted_count == 0:
-            print(
-                "[INFO] No files deleted. Possibly false positives or permission errors."
-            )
-        else:
-            print(f"[SUCCESS] {deleted_count} infected file(s) deleted.")
-
+        print("[INFO] Scan complete.\n")
+        print(result.stdout if result.stdout else "[INFO] No infected files found.")
     except FileNotFoundError:
         print("[ERROR] clamscan not found. Install it with: sudo apt install clamav")
 
 
-# ---------- Cleanup ----------
 def clear_directory():
+    """Deletes all files and subfolders in the toProcessFurther directory."""
+
     if not os.path.exists(TO_PROCESS_FURTHER_PATH):
         print(f"[WARNING] Path does not exist: {TO_PROCESS_FURTHER_PATH}")
         return
@@ -311,11 +320,9 @@ def clear_directory():
             print(f"[ERROR] Could not delete {item_path}. Reason: {e}")
 
 
-from urllib.parse import urlparse, urlunparse
-
-
 def normalize_url(url):
-    # Step 1: Add scheme if missing
+    """Normalizes a URL by enforcing scheme and trailing slash rules."""
+
     if not url.startswith("http://") and not url.startswith("https://"):
         url = "https://" + url
 
@@ -342,7 +349,7 @@ def normalize_url(url):
     return normalized
 
 
-# ---------- Main ----------
+# main function
 def downloadFilesAndCheck():
     print("=" * 50)
     print("---Processing Downloaded Files---")
@@ -380,6 +387,5 @@ def downloadFilesAndCheck():
     return all_links
 
 
-# ---------- Run ----------
 if __name__ == "__main__":
     downloadFilesAndCheck()

@@ -1,6 +1,5 @@
 __all__ = [
     "normalize_url",
-    "is_internal",
     "should_exclude_url",
     "is_possibly_malicious",
     "getFileExtension",
@@ -37,12 +36,10 @@ EXCLUDED_PATH_PREFIXES = [
     "/moodle/user",
 ]
 
-# ────────────────────────────────────────────────────────────────
-# 📍 URL + DOMAIN HELPERS
-# ────────────────────────────────────────────────────────────────
-
 
 def normalize_url(url: str) -> str:
+    """Normalizes LMS URLs by keeping only key query parameters and removing fragments."""
+
     parsed = urlparse(url)
     query = parse_qs(parsed.query)
     important_keys = {"id", "d", "cmid", "attempt"}
@@ -50,19 +47,6 @@ def normalize_url(url: str) -> str:
     normalized_query = urlencode(filtered_query, doseq=True)
     return urlunparse(parsed._replace(query=normalized_query, fragment=""))
 
-
-ALLOWED_INTERNAL_DOMAIN = "10.51.33.25"
-
-
-def is_internal(url: str) -> bool:
-    try:
-        parsed = urlparse(url)
-        return parsed.hostname == ALLOWED_INTERNAL_DOMAIN
-    except:
-        return False
-
-
-from urllib.parse import urlparse
 
 IGNORED_INTERNAL_DOMAINS = [
     "www.murdoch.edu.au",
@@ -72,29 +56,31 @@ IGNORED_INTERNAL_DOMAINS = [
     "rl.talis.com",
 ]
 
+
 def should_exclude_url(url: str) -> bool:
+    """Determines whether a URL should be excluded based on internal Moodle paths or trusted domains."""
     try:
         parsed = urlparse(url)
         domain = parsed.hostname or ""
         path = parsed.path or ""
 
-        # Already existing logic
         for prefix in EXCLUDED_PATH_PREFIXES:
             if path.startswith(prefix):
                 return True
 
-        # NEW: skip known Murdoch-wide internal domains
         for ignored in IGNORED_INTERNAL_DOMAINS:
             if ignored in domain:
                 return True
 
         return False
     except Exception as e:
-        print(f"❌ Error parsing URL for exclusion: {e}")
+        print(f"[ERROR] Error parsing URL for exclusion: {e}")
         return True  # safer to exclude if unsure
 
 
 def is_possibly_malicious(url: str, mime_type: str) -> bool:
+    """Flags a URL as suspicious if its MIME subtype matches known executable or dangerous types."""
+
     suspicious_mime_subtypes = {
         "x-msdownload",
         "x-executable",
@@ -111,12 +97,9 @@ def is_possibly_malicious(url: str, mime_type: str) -> bool:
         return True
 
 
-# ────────────────────────────────────────────────────────────────
-# 📂 FILE STORAGE
-# ────────────────────────────────────────────────────────────────
-
-
 def getFileExtension(ftype: str) -> str:
+    """Maps a MIME type to its corresponding file extension for storage and saving."""
+
     mime_to_ext = {
         "application/pdf": ".pdf",
         "application/zip": ".zip",
