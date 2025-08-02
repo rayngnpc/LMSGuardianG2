@@ -1,8 +1,0 @@
-apt install -y mysql-client mysql-server apache2 php php-mysql php-mbstring php-xml  php-curl php-zip php-gd php-intl php-soap
-apt install -y mariadb-client mariadb-server apache2 php php-mysql php-mbstring php-xml  php-curl php-zip php-gd php-intl php-soap
-apt update
-apt upgrade -y
-cd ..
-exit
-google-chrome
-exit
